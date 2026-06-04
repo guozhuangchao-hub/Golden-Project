@@ -1,0 +1,245 @@
+:root {
+  --bg: #171d19;
+  --card: rgba(255, 250, 241, 0.94);
+  --ink: #1f241f;
+  --muted: #727067;
+  --accent: #c86636;
+  --green: #315c4d;
+  --danger: #a64232;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(200, 102, 54, 0.34), transparent 28%),
+    linear-gradient(180deg, #111612 0%, #20271f 100%);
+  color: var(--ink);
+  font-family: "Hiragino Sans GB", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.app-shell {
+  width: min(460px, 100%);
+  margin: 0 auto;
+  padding: 14px;
+}
+
+.phone-frame {
+  min-height: calc(100vh - 28px);
+  overflow: hidden;
+  border-radius: 34px;
+  background: #f5eedf;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.34);
+}
+
+.app-hero {
+  padding: 20px;
+  color: #fff4e6;
+  background:
+    radial-gradient(circle at top right, rgba(200, 102, 54, 0.28), transparent 34%),
+    linear-gradient(135deg, #1f2923 0%, #121714 100%);
+}
+
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 244, 230, 0.68);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statusbar strong {
+  color: #ffc49c;
+}
+
+.app-hero h1 {
+  margin: 22px 0 8px;
+  font-size: 34px;
+  letter-spacing: -0.06em;
+}
+
+.app-hero p {
+  margin: 0;
+  color: rgba(255, 244, 230, 0.7);
+  line-height: 1.6;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.stat-pill {
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.stat-pill strong {
+  display: block;
+  font-size: 24px;
+}
+
+.stat-pill span {
+  color: rgba(255, 244, 230, 0.64);
+  font-size: 11px;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: #f5eedf;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.tabs button {
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 8px;
+  background: rgba(31, 36, 31, 0.07);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff5e8;
+}
+
+.tab-panel {
+  display: none;
+  padding: 8px 14px 24px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0 12px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.section-title span {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(200, 102, 54, 0.14);
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.task-list,
+.event-list,
+.module-list-mobile {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-card {
+  padding: 16px;
+  border-radius: 22px;
+  background: var(--card);
+  border: 1px solid rgba(31, 36, 31, 0.08);
+  box-shadow: 0 14px 30px rgba(35, 28, 16, 0.08);
+}
+
+.mobile-card h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.mobile-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.tag {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(31, 36, 31, 0.07);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tag.hot {
+  background: rgba(200, 102, 54, 0.14);
+  color: var(--accent);
+}
+
+.tag.green {
+  background: rgba(49, 92, 77, 0.14);
+  color: var(--green);
+}
+
+.task-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.task-actions button {
+  border: 0;
+  border-radius: 14px;
+  padding: 11px;
+  font-weight: 900;
+}
+
+.task-actions button:only-child {
+  grid-column: 1 / -1;
+}
+
+.task-actions button:disabled {
+  opacity: 0.62;
+}
+
+.task-actions .primary {
+  background: var(--accent);
+  color: #fff5e8;
+}
+
+.task-actions .ghost {
+  background: rgba(31, 36, 31, 0.08);
+  color: var(--ink);
+}
+
+.empty-mobile {
+  padding: 30px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  text-align: center;
+}

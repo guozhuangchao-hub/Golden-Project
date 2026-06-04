@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Project 项目结构</title>
+    <script>
+      (function () {
+        const assetBase = location.protocol === 'file:' ? './' : '/console/assets/';
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = `${assetBase}dashboard.css`;
+        document.head.appendChild(style);
+        window.__STRUCTURE_ASSET_BASE__ = assetBase;
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="shell structure-shell">
+      <section class="structure-hero">
+        <div>
+          <a class="back-link" id="backToDashboard" href="/console/dashboard">返回 dashboard</a>
+          <div class="eyebrow"><span>STRUCTURE MODE</span></div>
+          <h1 id="structureProjectName">项目结构</h1>
+          <p id="structureProjectMeta">查看模块、负责人、成员和任务节点，拖动模块卡片即可调整顺序。</p>
+        </div>
+        <aside class="structure-switcher">
+          <label for="structureProjectSelect">项目切换</label>
+          <select id="structureProjectSelect">
+            <option value="">正在加载项目列表...</option>
+          </select>
+          <button class="button primary" id="loadStructureProject" type="button">加载结构</button>
+          <p class="subtle" id="structureStatus">正在准备结构页...</p>
+        </aside>
+      </section>
+
+      <section class="structure-info-row">
+        <article class="panel dark structure-info-panel">
+          <div class="panel-header">
+            <div>
+              <h3>结构概览</h3>
+              <p>项目经理用这里快速判断模块和人员配置是否齐。</p>
+            </div>
+            <span class="badge">Overview</span>
+          </div>
+          <div class="structure-side-stats" id="structureStats"></div>
+        </article>
+
+        <article class="panel structure-info-panel">
+          <div class="panel-header">
+            <div>
+              <h3>负责人索引</h3>
+              <p>按模块查看当前负责人，适合检查责任链。</p>
+            </div>
+            <span class="badge">Leaders</span>
+          </div>
+          <div class="leader-list scroll-list" id="leaderList"></div>
+        </article>
+      </section>
+
+      <section class="panel structure-main-panel">
+        <div class="panel-header">
+          <div>
+            <h3>项目结构画布</h3>
+            <p>像工作流画布一样查看项目结构。内容变多时可横向和纵向滚动，模块节点支持编辑和拖动排序。</p>
+          </div>
+          <span class="badge">Canvas Tree</span>
+        </div>
+        <div class="structure-canvas">
+          <div class="canvas-hint">画布可横向 / 纵向滚动</div>
+          <div class="structure-tree structure-tree-page" id="structureTree"></div>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="moduleEditModal" aria-hidden="true">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="moduleEditTitle">
+        <div class="modal-header">
+          <div>
+            <div class="eyebrow compact-eyebrow">Module Edit</div>
+            <h3 id="moduleEditTitle">调整模块岗位</h3>
+            <p>修改模块说明和负责人后，项目结构图会立即按新的责任关系展示。</p>
+          </div>
+          <button class="modal-close" id="closeModuleEdit" type="button" aria-label="关闭">×</button>
+        </div>
+        <form class="modal-form" id="moduleEditForm">
+          <input id="editModuleId" type="hidden" />
+          <div class="field">
+            <label for="editModuleName">模块</label>
+            <input id="editModuleName" disabled />
+          </div>
+          <div class="field">
+            <label for="editLeaderName">负责人</label>
+            <input id="editLeaderName" name="leaderName" list="projectMemberNames" placeholder="输入或选择负责人" />
+            <datalist id="projectMemberNames"></datalist>
+          </div>
+          <div class="field">
+            <label for="editModuleDescription">模块说明</label>
+            <textarea id="editModuleDescription" name="description" rows="4"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button class="button secondary" id="cancelModuleEdit" type="button">取消</button>
+            <button class="button primary" type="submit">保存调整</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <script>
+      (function () {
+        const assetBase = window.__STRUCTURE_ASSET_BASE__ || (location.protocol === 'file:' ? './' : '/console/assets/');
+        const script = document.createElement('script');
+        script.src = `${assetBase}structure.js`;
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

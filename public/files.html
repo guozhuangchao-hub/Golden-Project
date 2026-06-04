@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Project 项目文件</title>
+    <script>
+      (function () {
+        const assetBase = location.protocol === 'file:' ? './' : '/console/assets/';
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = `${assetBase}dashboard.css`;
+        document.head.appendChild(style);
+        window.__FILES_ASSET_BASE__ = assetBase;
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="shell structure-shell files-shell">
+      <section class="structure-hero files-hero">
+        <div>
+          <a class="back-link" id="backToDashboard" href="/console/dashboard">返回 dashboard</a>
+          <div class="eyebrow"><span>FILE ROOM</span></div>
+          <h1 id="filesProjectName">项目文件</h1>
+          <p id="filesProjectMeta">集中查看项目文件夹中的方案、表格、文档、图片和其他活动资料。</p>
+        </div>
+        <aside class="structure-switcher">
+          <label for="filesProjectSelect">项目切换</label>
+          <select id="filesProjectSelect">
+            <option value="">正在加载项目列表...</option>
+          </select>
+          <button class="button primary" id="loadFilesProject" type="button">加载文件</button>
+          <p class="subtle" id="filesStatus">正在准备文件页...</p>
+        </aside>
+      </section>
+
+      <section class="file-summary-grid" id="fileSummary"></section>
+
+      <section class="panel files-main-panel">
+        <div class="panel-header">
+          <div>
+            <h3>活动资料库</h3>
+            <p id="fileFolderMeta">按文件类型自动分组，点击文件可下载查看。</p>
+          </div>
+          <span class="badge">Project Files</span>
+        </div>
+        <div class="file-category-tabs" id="fileCategoryTabs"></div>
+        <div class="file-board" id="fileBoard"></div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        const assetBase = window.__FILES_ASSET_BASE__ || (location.protocol === 'file:' ? './' : '/console/assets/');
+        const script = document.createElement('script');
+        script.src = `${assetBase}files.js`;
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

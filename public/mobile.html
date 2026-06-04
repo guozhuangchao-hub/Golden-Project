@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Project Mobile</title>
+    <script>
+      (function () {
+        const assetBase = location.protocol === 'file:' ? './' : '/console/assets/';
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = `${assetBase}mobile.css`;
+        document.head.appendChild(style);
+        window.__MOBILE_ASSET_BASE__ = assetBase;
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="phone-frame">
+        <header class="app-hero">
+          <div class="statusbar">
+            <span>Golden App Demo</span>
+            <strong id="mobileMode">LIVE</strong>
+          </div>
+          <h1 id="mobileProjectName">现场任务</h1>
+          <p id="mobileProjectMeta">正在读取项目数据...</p>
+          <div class="hero-stats" id="mobileStats"></div>
+        </header>
+
+        <nav class="tabs" id="mobileTabs">
+          <button class="active" data-tab="tasks" type="button">我的任务</button>
+          <button data-tab="events" type="button">事件流</button>
+          <button data-tab="structure" type="button">项目结构</button>
+        </nav>
+
+        <section class="tab-panel active" id="tab-tasks">
+          <div class="section-title">
+            <h2>待处理任务</h2>
+            <span id="taskCount">0</span>
+          </div>
+          <div class="task-list" id="mobileTasks"></div>
+        </section>
+
+        <section class="tab-panel" id="tab-events">
+          <div class="section-title">
+            <h2>AI 事件流</h2>
+            <span id="eventCount">0</span>
+          </div>
+          <div class="event-list" id="mobileEvents"></div>
+        </section>
+
+        <section class="tab-panel" id="tab-structure">
+          <div class="section-title">
+            <h2>项目结构</h2>
+            <span id="moduleCount">0</span>
+          </div>
+          <div class="module-list-mobile" id="mobileModules"></div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        const assetBase = window.__MOBILE_ASSET_BASE__ || (location.protocol === 'file:' ? './' : '/console/assets/');
+        const script = document.createElement('script');
+        script.src = `${assetBase}mobile.js`;
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

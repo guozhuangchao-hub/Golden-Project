@@ -1,0 +1,60 @@
+{
+  "projectName": "",
+  "shortName": "",
+  "folderName": "",
+  "projectCode": "",
+  "projectType": "",
+  "projectStatus": "planning",
+  "city": "",
+  "projectDescription": "",
+  "projectManager": "",
+  "businessContact": "",
+  "dateRange": {
+    "start": "",
+    "end": "",
+    "peakWindowStart": "",
+    "peakWindowEnd": ""
+  },
+  "sourceDocument": {
+    "fileName": "",
+    "sheetName": "",
+    "title": ""
+  },
+  "summary": {
+    "activityCount": 0,
+    "taskItemCount": 0,
+    "locationCount": 0,
+    "departmentCount": 0,
+    "contactCount": 0
+  },
+  "primaryActivities": [],
+  "primaryVenues": [],
+  "primaryDepartments": [],
+  "keyContacts": [],
+  "recommendedModules": [],
+  "moduleDetails": [
+    {
+      "name": "",
+      "description": "",
+      "startDate": "",
+      "endDate": ""
+    }
+  ],
+  "activityDetails": [],
+  "venueDetails": [],
+  "departmentContacts": [],
+  "supplierDetails": [],
+  "taskDrafts": [],
+  "riskItems": [],
+  "agentIntegration": {
+    "可接入 agent": "Hermes / 其他",
+    "接入方式": "webhook / API",
+    "读取范围": "",
+    "写回范围": "",
+    "审核方式": "项目经理确认"
+  },
+  "intakeWorkbook": {
+    "fileName": "",
+    "sheetName": "填写说明"
+  }
+}

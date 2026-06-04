@@ -1,0 +1,498 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum MemberRole {
+  ADMIN
+  LEADER
+  EXECUTOR
+  TEMP
+}
+
+enum MemberStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum ModuleStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskLogAction {
+  CREATED
+  CONFIRMED
+  REASSIGNED
+  TRANSFERRED
+  STATUS_CHANGED
+  COMPLETED
+  CANCELLED
+  COMMENTED
+}
+
+enum NotificationType {
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_ASSIGNED
+  TASK_STATUS_CHANGED
+  TASK_OVERDUE
+  SYSTEM
+}
+
+enum NotificationChannel {
+  MINI_PROGRAM
+  FEISHU
+  WECHAT
+  SYSTEM
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AIReportType {
+  DAILY
+  SUMMARY
+  RISK
+}
+
+enum FeishuInboundMessageStatus {
+  NEW
+  PROCESSED
+  IGNORED
+}
+
+enum FeishuProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+}
+
+enum AgentInboundEventStatus {
+  NEW
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum EventSourceType {
+  feishu
+  wechat_import
+  app_report
+  manual
+  dingtalk
+  wecom
+}
+
+enum EventStatus {
+  pending_review
+  confirmed
+  in_progress
+  completed
+  rejected
+  cancelled
+  needs_more_info
+}
+
+enum VisibilityScope {
+  admin
+  module_leader
+  staff
+  part_time
+  temp_worker
+}
+
+model User {
+  id                      String                 @id @default(cuid())
+  name                    String                 @db.VarChar(100)
+  mobile                  String?                @unique @db.VarChar(30)
+  email                   String?                @unique @db.VarChar(100)
+  avatarUrl               String?                @map("avatar_url")
+  status                  UserStatus             @default(ACTIVE)
+  isTemporary             Boolean                @default(false) @map("is_temporary")
+  feishuUserId            String?                @unique @map("feishu_user_id") @db.VarChar(100)
+  wechatOpenId            String?                @unique @map("wechat_open_id") @db.VarChar(100)
+  remark                  String?
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+  createdProjects         Project[]              @relation("ProjectCreator")
+  projectMembers          ProjectMember[]
+  ownedTasks              Task[]                 @relation("TaskOwner")
+  assistedTasks           Task[]                 @relation("TaskAssistant")
+  createdTasks            Task[]                 @relation("TaskCreator")
+  taskLogs                TaskLog[]
+  notifications           Notification[]         @relation("NotificationReceiver")
+  sentNotifications       Notification[]         @relation("NotificationSender")
+  aiReports               AIReport[]             @relation("AIReportCreator")
+  reviewedFeishuProposals FeishuTaskProposal[]   @relation("FeishuProposalReviewer")
+  managedFeishuProjects   FeishuProjectSetting[] @relation("FeishuProjectManager")
+  createdEvents           Event[]                @relation("EventCreator")
+  confirmedEvents         Event[]                @relation("EventConfirmer")
+
+  @@map("users")
+}
+
+model Project {
+  id                  String                    @id @default(cuid())
+  name                String                    @db.VarChar(200)
+  code                String?                   @unique @db.VarChar(50)
+  description         String?
+  status              ProjectStatus             @default(DRAFT)
+  startDate           DateTime?                 @map("start_date")
+  endDate             DateTime?                 @map("end_date")
+  location            String?                   @db.VarChar(255)
+  createdById         String                    @map("created_by_id")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  createdBy           User                      @relation("ProjectCreator", fields: [createdById], references: [id])
+  modules             ProjectModule[]
+  members             ProjectMember[]
+  tasks               Task[]
+  notifications       Notification[]
+  aiReports           AIReport[]
+  feishuSetting       FeishuProjectSetting?
+  feishuMessages      FeishuMessage[]           @relation("ProjectFeishuMessages")
+  feishuTaskProposals FeishuTaskProposal[]      @relation("ProjectFeishuTaskProposals")
+  agentIntegrations   AgentIntegrationSetting[]
+  agentEvents         AgentInboundEvent[]
+  events              Event[]
+
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("projects")
+}
+
+model ProjectModule {
+  id             String         @id @default(cuid())
+  projectId      String         @map("project_id")
+  name           String         @db.VarChar(100)
+  description    String?
+  status         ModuleStatus   @default(PENDING)
+  sortOrder      Int            @default(0) @map("sort_order")
+  leaderMemberId String?        @map("leader_member_id")
+  startDate      DateTime?      @map("start_date")
+  endDate        DateTime?      @map("end_date")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  project        Project        @relation(fields: [projectId], references: [id])
+  leaderMember   ProjectMember? @relation("ModuleLeader", fields: [leaderMemberId], references: [id])
+  tasks          Task[]
+
+  @@unique([projectId, name])
+  @@index([projectId, status])
+  @@map("project_modules")
+}
+
+model ProjectMember {
+  id             String          @id @default(cuid())
+  projectId      String          @map("project_id")
+  userId         String          @map("user_id")
+  role           MemberRole
+  title          String?         @db.VarChar(100)
+  status         MemberStatus    @default(ACTIVE)
+  joinedAt       DateTime        @default(now()) @map("joined_at")
+  leftAt         DateTime?       @map("left_at")
+  remark         String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  project        Project         @relation(fields: [projectId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  ownedTasks     Task[]          @relation("TaskOwnerMember")
+  assistedTasks  Task[]          @relation("TaskAssistantMember")
+  managedModules ProjectModule[] @relation("ModuleLeader")
+
+  @@unique([projectId, userId])
+  @@index([projectId, role, status])
+  @@map("project_members")
+}
+
+model Task {
+  id                String         @id @default(cuid())
+  projectId         String         @map("project_id")
+  moduleId          String?        @map("module_id")
+  title             String         @db.VarChar(200)
+  description       String?
+  status            TaskStatus     @default(PENDING_CONFIRMATION)
+  priority          TaskPriority   @default(MEDIUM)
+  ownerId           String?        @map("owner_id")
+  ownerMemberId     String?        @map("owner_member_id")
+  assistantId       String?        @map("assistant_id")
+  assistantMemberId String?        @map("assistant_member_id")
+  createdById       String         @map("created_by_id")
+  startTime         DateTime?      @map("start_time")
+  dueTime           DateTime?      @map("due_time")
+  confirmedAt       DateTime?      @map("confirmed_at")
+  completedAt       DateTime?      @map("completed_at")
+  cancelledAt       DateTime?      @map("cancelled_at")
+  sortOrder         Int            @default(0) @map("sort_order")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  project           Project        @relation(fields: [projectId], references: [id])
+  module            ProjectModule? @relation(fields: [moduleId], references: [id])
+  owner             User?          @relation("TaskOwner", fields: [ownerId], references: [id])
+  ownerMember       ProjectMember? @relation("TaskOwnerMember", fields: [ownerMemberId], references: [id])
+  assistant         User?          @relation("TaskAssistant", fields: [assistantId], references: [id])
+  assistantMember   ProjectMember? @relation("TaskAssistantMember", fields: [assistantMemberId], references: [id])
+  createdBy         User           @relation("TaskCreator", fields: [createdById], references: [id])
+  logs              TaskLog[]
+  notifications     Notification[]
+
+  @@index([projectId, status, dueTime])
+  @@index([moduleId, status])
+  @@index([ownerId])
+  @@index([assistantId])
+  @@map("tasks")
+}
+
+model TaskLog {
+  id          String        @id @default(cuid())
+  taskId      String        @map("task_id")
+  action      TaskLogAction
+  operatorId  String?       @map("operator_id")
+  fromStatus  TaskStatus?   @map("from_status")
+  toStatus    TaskStatus?   @map("to_status")
+  fromOwnerId String?       @map("from_owner_id")
+  toOwnerId   String?       @map("to_owner_id")
+  content     String?
+  extraData   Json?         @map("extra_data")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  task        Task          @relation(fields: [taskId], references: [id])
+  operator    User?         @relation(fields: [operatorId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@index([operatorId])
+  @@map("task_logs")
+}
+
+model Notification {
+  id         String              @id @default(cuid())
+  projectId  String?             @map("project_id")
+  taskId     String?             @map("task_id")
+  receiverId String              @map("receiver_id")
+  senderId   String?             @map("sender_id")
+  type       NotificationType
+  channel    NotificationChannel @default(MINI_PROGRAM)
+  status     NotificationStatus  @default(PENDING)
+  title      String              @db.VarChar(200)
+  content    String
+  payload    Json?
+  sentAt     DateTime?           @map("sent_at")
+  readAt     DateTime?           @map("read_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+  project    Project?            @relation(fields: [projectId], references: [id])
+  task       Task?               @relation(fields: [taskId], references: [id])
+  receiver   User                @relation("NotificationReceiver", fields: [receiverId], references: [id])
+  sender     User?               @relation("NotificationSender", fields: [senderId], references: [id])
+
+  @@index([receiverId, status, createdAt])
+  @@index([projectId])
+  @@index([taskId])
+  @@map("notifications")
+}
+
+model AIReport {
+  id          String       @id @default(cuid())
+  projectId   String       @map("project_id")
+  reportDate  DateTime     @map("report_date")
+  type        AIReportType @default(DAILY)
+  title       String       @db.VarChar(200)
+  content     String
+  summary     String?
+  sourceData  Json?        @map("source_data")
+  generatedBy String?      @map("generated_by")
+  createdById String?      @map("created_by_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  project     Project      @relation(fields: [projectId], references: [id])
+  createdBy   User?        @relation("AIReportCreator", fields: [createdById], references: [id])
+
+  @@unique([projectId, reportDate, type])
+  @@index([projectId, reportDate])
+  @@map("ai_reports")
+}
+
+model FeishuProjectSetting {
+  id            String               @id @default(cuid())
+  projectId     String               @unique @map("project_id")
+  managerUserId String?              @map("manager_user_id")
+  groupChatId   String?              @unique @map("group_chat_id") @db.VarChar(100)
+  summaryHour   Int                  @default(22) @map("summary_hour")
+  summaryMinute Int                  @default(0) @map("summary_minute")
+  timezone      String               @default("Asia/Shanghai")
+  enabled       Boolean              @default(true)
+  lastDigestAt  DateTime?            @map("last_digest_at")
+  lastSyncAt    DateTime?            @map("last_sync_at")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  project       Project              @relation(fields: [projectId], references: [id])
+  manager       User?                @relation("FeishuProjectManager", fields: [managerUserId], references: [id])
+  messages      FeishuMessage[]
+  proposals     FeishuTaskProposal[]
+
+  @@index([enabled, summaryHour, summaryMinute])
+  @@map("feishu_project_settings")
+}
+
+model FeishuMessage {
+  id                 String                     @id @default(cuid())
+  projectId          String                     @map("project_id")
+  settingId          String?                    @map("setting_id")
+  chatId             String                     @map("chat_id") @db.VarChar(100)
+  messageId          String                     @unique @map("message_id") @db.VarChar(120)
+  senderFeishuUserId String?                    @map("sender_feishu_user_id") @db.VarChar(100)
+  senderName         String?                    @map("sender_name") @db.VarChar(100)
+  messageType        String?                    @map("message_type") @db.VarChar(50)
+  content            String?
+  rawPayload         Json?                      @map("raw_payload")
+  receivedAt         DateTime                   @default(now()) @map("received_at")
+  processedAt        DateTime?                  @map("processed_at")
+  status             FeishuInboundMessageStatus @default(NEW)
+  project            Project                    @relation("ProjectFeishuMessages", fields: [projectId], references: [id])
+  setting            FeishuProjectSetting?      @relation(fields: [settingId], references: [id])
+
+  @@index([projectId, receivedAt])
+  @@index([chatId, receivedAt])
+  @@index([status, receivedAt])
+  @@map("feishu_messages")
+}
+
+model FeishuTaskProposal {
+  id             String                @id @default(cuid())
+  projectId      String                @map("project_id")
+  settingId      String?               @map("setting_id")
+  summaryDate    DateTime              @map("summary_date")
+  title          String                @db.VarChar(200)
+  summary        String
+  sourceMessages Json?                 @map("source_messages")
+  proposedTasks  Json?                 @map("proposed_tasks")
+  cardMessageId  String?               @map("card_message_id") @db.VarChar(120)
+  status         FeishuProposalStatus  @default(PENDING)
+  managerComment String?               @map("manager_comment")
+  reviewedById   String?               @map("reviewed_by_id")
+  reviewedAt     DateTime?             @map("reviewed_at")
+  appliedAt      DateTime?             @map("applied_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  project        Project               @relation("ProjectFeishuTaskProposals", fields: [projectId], references: [id])
+  setting        FeishuProjectSetting? @relation(fields: [settingId], references: [id])
+  reviewedBy     User?                 @relation("FeishuProposalReviewer", fields: [reviewedById], references: [id])
+
+  @@index([projectId, summaryDate])
+  @@index([status, summaryDate])
+  @@map("feishu_task_proposals")
+}
+
+model AgentIntegrationSetting {
+  id            String              @id @default(cuid())
+  projectId     String              @map("project_id")
+  provider      String              @db.VarChar(50)
+  displayName   String?             @map("display_name") @db.VarChar(100)
+  webhookUrl    String?             @map("webhook_url") @db.VarChar(255)
+  webhookSecret String?             @map("webhook_secret") @db.VarChar(255)
+  enabled       Boolean             @default(true)
+  capabilities  Json?
+  config        Json?
+  lastSeenAt    DateTime?           @map("last_seen_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  project       Project             @relation(fields: [projectId], references: [id])
+  events        AgentInboundEvent[]
+
+  @@unique([projectId, provider])
+  @@index([enabled, provider])
+  @@map("agent_integration_settings")
+}
+
+model AgentInboundEvent {
+  id              String                   @id @default(cuid())
+  projectId       String                   @map("project_id")
+  integrationId   String?                  @map("integration_id")
+  provider        String                   @db.VarChar(50)
+  eventType       String                   @map("event_type") @db.VarChar(100)
+  externalEventId String?                  @unique @map("external_event_id") @db.VarChar(120)
+  payload         Json
+  status          AgentInboundEventStatus  @default(NEW)
+  receivedAt      DateTime                 @default(now()) @map("received_at")
+  processedAt     DateTime?                @map("processed_at")
+  errorMessage    String?                  @map("error_message")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+  project         Project                  @relation(fields: [projectId], references: [id])
+  integration     AgentIntegrationSetting? @relation(fields: [integrationId], references: [id])
+
+  @@index([projectId, provider, receivedAt])
+  @@index([status, receivedAt])
+  @@map("agent_inbound_events")
+}
+
+model Event {
+  id               String          @id @default(cuid())
+  projectId        String          @map("project_id")
+  eventType        String          @map("event_type") @db.VarChar(100)
+  title            String          @db.VarChar(200)
+  description      String?
+  status           EventStatus     @default(pending_review)
+  confidence       Decimal?        @db.Decimal(4, 3)
+  sourceType       EventSourceType @map("source_type")
+  sourceChannel    String?         @map("source_channel") @db.VarChar(100)
+  sourceSender     String?         @map("source_sender") @db.VarChar(100)
+  sourceSenderRole String?         @map("source_sender_role") @db.VarChar(50)
+  rawContent       String?         @map("raw_content")
+  visibilityScope  VisibilityScope @default(admin) @map("visibility_scope")
+  aiResult         Json?           @map("ai_result")
+  proposedChanges  Json?           @map("proposed_changes")
+  createdById      String?         @map("created_by")
+  confirmedById    String?         @map("confirmed_by")
+  confirmedAt      DateTime?       @map("confirmed_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  project          Project         @relation(fields: [projectId], references: [id])
+  createdBy        User?           @relation("EventCreator", fields: [createdById], references: [id])
+  confirmedBy      User?           @relation("EventConfirmer", fields: [confirmedById], references: [id])
+
+  @@index([projectId, status, createdAt])
+  @@index([sourceType, createdAt])
+  @@index([confidence])
+  @@map("events")
+}
