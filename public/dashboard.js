@@ -1112,10 +1112,32 @@ function getOverviewData() {
 }
 
 function renderOverviewEvents(data) {
-  const events = data.pendingEvents || [];
+  const eventMap = new Map();
+  [...(data.pendingEvents || []), ...(data.events || [])].forEach((event) => {
+    if (event?.id) {
+      eventMap.set(event.id, event);
+    }
+  });
+  const statusOrder = {
+    pending_review: 0,
+    needs_more_info: 1,
+    confirmed: 2,
+    in_progress: 3,
+    completed: 4,
+    rejected: 5,
+    cancelled: 6,
+  };
+  const events = [...eventMap.values()].sort((a, b) => {
+    const aRank = statusOrder[a.status] ?? 9;
+    const bRank = statusOrder[b.status] ?? 9;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
 
   if (!events.length) {
-    return '<div class="empty">当前项目没有待处理 Event。新的飞书、微信、App 或手动录入事项会先进入这里。</div>';
+    return '<div class="empty">当前项目还没有 Event。新的飞书、微信、App 或手动录入事项会先进入这里。</div>';
   }
 
   return events
@@ -1126,10 +1148,11 @@ function renderOverviewEvents(data) {
         sourceTypeMap[event.sourceType] || event.sourceType || '未知来源',
         eventStatusMap[event.status] || event.status || '待确认',
         `置信度 ${formatConfidence(event.confidence)}`,
+        `创建 ${formatDate(event.createdAt)}`,
       ].filter(Boolean);
 
       return `
-        <article class="overview-detail-item">
+        <article class="overview-detail-item event-${escapeHtml(event.status || 'unknown')}">
           <div class="overview-detail-item-head">
             <div>
               <span class="overview-detail-kicker">Event Task</span>
@@ -1144,6 +1167,11 @@ function renderOverviewEvents(data) {
             <span class="chip">负责人 ${escapeHtml(proposedTask.ownerName || '待指定')}</span>
             <span class="chip">优先级 ${escapeHtml(getPriorityLabel(proposedTask.priority))}</span>
           </div>
+          ${
+            event.rawContent
+              ? `<div class="overview-detail-source"><strong>原始内容</strong><span>${escapeHtml(event.rawContent)}</span></div>`
+              : ''
+          }
         </article>
       `;
     })
@@ -1218,7 +1246,7 @@ function openOverviewDetailModal(type) {
   } else {
     eyebrow.textContent = 'Event View';
     title.textContent = '事件任务列表';
-    subtitle.textContent = '查看当前项目 AI 识别后等待确认的事件与拟生成任务。';
+    subtitle.textContent = '查看当前项目 AI 识别的事件、处理状态与拟生成任务。';
     list.innerHTML = renderOverviewEvents(data);
   }
 
