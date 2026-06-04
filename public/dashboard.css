@@ -1648,6 +1648,61 @@ body::before {
   gap: 12px;
 }
 
+.feishu-list,
+.report-list,
+.signal-list {
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 90, 54, 0.42) rgba(31, 36, 31, 0.06);
+}
+
+.feishu-list {
+  max-height: min(620px, 62vh);
+}
+
+.signal-list {
+  max-height: min(430px, 42vh);
+}
+
+.report-list {
+  max-height: min(320px, 34vh);
+}
+
+.panel.dark .signal-list {
+  scrollbar-color: rgba(255, 216, 194, 0.36) rgba(255, 255, 255, 0.08);
+}
+
+.feishu-list::-webkit-scrollbar,
+.report-list::-webkit-scrollbar,
+.signal-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.feishu-list::-webkit-scrollbar-track,
+.report-list::-webkit-scrollbar-track,
+.signal-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(31, 36, 31, 0.06);
+}
+
+.feishu-list::-webkit-scrollbar-thumb,
+.report-list::-webkit-scrollbar-thumb,
+.signal-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(191, 90, 54, 0.42);
+}
+
+.panel.dark .signal-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.panel.dark .signal-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 216, 194, 0.36);
+}
+
 .status-card,
 .module-item,
 .feishu-item,
@@ -2606,6 +2661,12 @@ body::before {
     max-height: 220px;
   }
 
+  .feishu-list,
+  .signal-list,
+  .report-list {
+    max-height: 360px;
+  }
+
   .hero-metrics,
   .status-grid,
   .flow-summary,
@@ -2678,6 +2739,12 @@ body::before {
   .panel {
     padding: 18px;
     border-radius: 22px;
+  }
+
+  .feishu-list,
+  .signal-list,
+  .report-list {
+    max-height: 320px;
   }
 
   .day-content {
