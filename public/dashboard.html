@@ -130,15 +130,37 @@
             <div class="signal-list" id="signals"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel task-publish-panel">
             <div class="panel-header">
               <div>
-                <h3>AI 日报摘要</h3>
-                <p>保存每天的生成结果，给管理层和组长作为交接材料。</p>
+                <h3>任务发布</h3>
+                <p>输入自然语言任务，AI 转译后发布到后台，并写入微信小程序通知队列。</p>
               </div>
-              <span class="badge">Report Archive</span>
+              <span class="badge">Task Push</span>
             </div>
-            <div class="report-list" id="reports"></div>
+            <div class="task-publish-box">
+              <div class="publish-mode-tabs" id="publishModeTabs">
+                <button class="publish-mode active" type="button" data-publish-mode="single">单人</button>
+                <button class="publish-mode" type="button" data-publish-mode="multi">多人</button>
+                <button class="publish-mode" type="button" data-publish-mode="all">全体</button>
+              </div>
+              <div class="publish-recipient-summary" id="publishRecipientSummary">将发送给：未选择</div>
+              <div class="publish-recipient-list" id="publishRecipientList"></div>
+              <label class="publish-label" for="publishTaskText">任务描述</label>
+              <textarea
+                id="publishTaskText"
+                class="publish-textarea"
+                maxlength="500"
+                placeholder="例如：请王晴今天 18:00 前确认签到胸卡缺口，如果少于 80 个就安排补打。"
+              ></textarea>
+              <p class="publish-hint">AI 会结合发布对象，提取任务标题、模块、负责人、优先级和截止时间。</p>
+              <div class="publish-preview" id="publishPreview"></div>
+              <div class="publish-actions">
+                <button class="button secondary" id="translateTaskPublish" type="button">AI 转译</button>
+                <button class="button primary" id="confirmTaskPublish" type="button" disabled>确认发布</button>
+              </div>
+              <p class="subtle" id="taskPublishStatus">选择对象并输入任务描述后即可发布。</p>
+            </div>
           </article>
         </div>
       </section>

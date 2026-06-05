@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { PublishTaskDto, TranslateTaskDto } from './dto/publish-task.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { TasksService } from './tasks.service';
 
@@ -10,6 +11,16 @@ export class TasksController {
   @Post()
   create(@Param('projectId') projectId: string, @Body() dto: CreateTaskDto) {
     return this.tasksService.create(projectId, dto);
+  }
+
+  @Post('translate')
+  translate(@Param('projectId') projectId: string, @Body() dto: TranslateTaskDto) {
+    return this.tasksService.translatePublish(projectId, dto);
+  }
+
+  @Post('publish')
+  publish(@Param('projectId') projectId: string, @Body() dto: PublishTaskDto) {
+    return this.tasksService.publish(projectId, dto);
   }
 
   @Get()

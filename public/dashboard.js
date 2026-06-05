@@ -424,9 +424,206 @@ let latestDashboardData = null;
 let draggedModuleId = '';
 let structureDragBound = false;
 let isStructureDragging = false;
+let publishRecipientMode = 'single';
+let selectedPublishMemberIds = new Set();
+let latestPublishPreview = null;
+
+function getProjectMembers(data) {
+  return (data?.project?.members || []).filter((member) => member?.id);
+}
 
 function getMemberName(member) {
   return member?.user?.name || member?.name || '未命名成员';
+}
+
+function getPublishRecipients() {
+  const members = getProjectMembers(latestDashboardData);
+  if (publishRecipientMode === 'all') {
+    return members;
+  }
+
+  return members.filter((member) => selectedPublishMemberIds.has(member.id));
+}
+
+function updatePublishButtons() {
+  const text = document.querySelector('#publishTaskText')?.value.trim() || '';
+  const translateButton = document.querySelector('#translateTaskPublish');
+  const confirmButton = document.querySelector('#confirmTaskPublish');
+  const hasRecipients = publishRecipientMode === 'all' || selectedPublishMemberIds.size > 0;
+  const canTranslate = Boolean(currentProjectCode && text && hasRecipients);
+
+  if (translateButton) {
+    translateButton.disabled = !canTranslate;
+  }
+  if (confirmButton) {
+    confirmButton.disabled = !canTranslate || !latestPublishPreview;
+  }
+}
+
+function setTaskPublishStatus(message) {
+  const status = document.querySelector('#taskPublishStatus');
+  if (status) {
+    status.textContent = message;
+  }
+}
+
+function renderPublishPreview(preview) {
+  const container = document.querySelector('#publishPreview');
+  if (!container) {
+    return;
+  }
+
+  if (!preview) {
+    container.classList.remove('visible');
+    container.innerHTML = '';
+    updatePublishButtons();
+    return;
+  }
+
+  const recipients = (preview.recipients || []).map((recipient) => recipient.name).join('、') || '未选择';
+  container.classList.add('visible');
+  container.innerHTML = `
+    <div class="publish-preview-title">
+      <span>AI 转译结果</span>
+      <strong>${escapeHtml(preview.title || '未命名任务')}</strong>
+    </div>
+    <div class="publish-preview-grid">
+      <span>模块</span><strong>${escapeHtml(preview.moduleName || '项目级任务')}</strong>
+      <span>对象</span><strong>${escapeHtml(recipients)}</strong>
+      <span>负责人</span><strong>${escapeHtml(preview.ownerName || '待指定负责人')}</strong>
+      <span>优先级</span><strong>${escapeHtml(getPriorityLabel(preview.priority))}</strong>
+      <span>截止</span><strong>${escapeHtml(preview.dueTimeLabel || formatDate(preview.dueTime))}</strong>
+    </div>
+  `;
+  updatePublishButtons();
+}
+
+function renderTaskPublisher(data) {
+  const modeTabs = document.querySelector('#publishModeTabs');
+  const summary = document.querySelector('#publishRecipientSummary');
+  const list = document.querySelector('#publishRecipientList');
+  if (!modeTabs || !summary || !list) {
+    return;
+  }
+
+  const members = getProjectMembers(data);
+  const validIds = new Set(members.map((member) => member.id));
+  selectedPublishMemberIds = new Set([...selectedPublishMemberIds].filter((id) => validIds.has(id)));
+
+  if (publishRecipientMode === 'single' && !selectedPublishMemberIds.size && members[0]) {
+    selectedPublishMemberIds.add(members[0].id);
+  }
+
+  modeTabs.querySelectorAll('[data-publish-mode]').forEach((button) => {
+    button.classList.toggle('active', button.getAttribute('data-publish-mode') === publishRecipientMode);
+  });
+
+  const recipients = publishRecipientMode === 'all' ? members : getPublishRecipients();
+  if (!members.length) {
+    summary.textContent = '将发送给：请先加载真实项目并录入成员';
+  } else if (publishRecipientMode === 'all') {
+    summary.textContent = `将发送给：全体成员（${members.length} 人）`;
+  } else if (recipients.length) {
+    summary.textContent = `将发送给：${recipients.map(getMemberName).join('、')}`;
+  } else {
+    summary.textContent = '将发送给：未选择';
+  }
+
+  list.innerHTML = members.length
+    ? members
+        .map((member) => {
+          const selected = publishRecipientMode === 'all' || selectedPublishMemberIds.has(member.id);
+          const disabled = publishRecipientMode === 'all';
+          return `
+            <button
+              class="publish-recipient-chip ${selected ? 'selected' : ''}"
+              type="button"
+              data-publish-member-id="${escapeHtml(member.id)}"
+              ${disabled ? 'disabled' : ''}
+            >
+              <strong>${escapeHtml(getMemberName(member))}</strong>
+              <span>${escapeHtml(roleNameMap[member.role] || member.role || '成员')}</span>
+            </button>
+          `;
+        })
+        .join('')
+    : '<div class="empty compact-empty">当前没有可发布对象。加载真实项目后会显示项目成员。</div>';
+
+  updatePublishButtons();
+}
+
+function getPublishPayload() {
+  const text = document.querySelector('#publishTaskText')?.value.trim() || '';
+  const payload = {
+    text,
+    recipientMode: publishRecipientMode,
+  };
+
+  if (publishRecipientMode !== 'all') {
+    payload.recipientMemberIds = [...selectedPublishMemberIds];
+  }
+
+  return payload;
+}
+
+async function translateTaskPublish() {
+  if (!currentProjectCode) {
+    throw new Error('请先加载真实项目');
+  }
+
+  const payload = getPublishPayload();
+  if (!payload.text) {
+    throw new Error('请先输入任务描述');
+  }
+  if (publishRecipientMode !== 'all' && !payload.recipientMemberIds.length) {
+    throw new Error('请先选择发布对象');
+  }
+
+  const response = await fetch(`/api/projects/${encodeURIComponent(currentProjectCode)}/tasks/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`AI 转译失败：${response.status}`);
+  }
+
+  latestPublishPreview = await response.json();
+  renderPublishPreview(latestPublishPreview);
+  setTaskPublishStatus('已完成 AI 转译，确认无误后可以发布到任务与小程序通知队列。');
+}
+
+async function confirmTaskPublish() {
+  if (!latestPublishPreview) {
+    throw new Error('请先完成 AI 转译');
+  }
+
+  const payload = {
+    ...getPublishPayload(),
+    title: latestPublishPreview.title,
+    moduleId: latestPublishPreview.moduleId,
+    moduleName: latestPublishPreview.moduleName,
+    priority: latestPublishPreview.priority,
+    dueTime: latestPublishPreview.dueTime,
+  };
+
+  const response = await fetch(`/api/projects/${encodeURIComponent(currentProjectCode)}/tasks/publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务发布失败：${response.status}`);
+  }
+
+  const result = await response.json();
+  latestPublishPreview = null;
+  renderPublishPreview(null);
+  document.querySelector('#publishTaskText').value = '';
+  setTaskPublishStatus(`已发布「${result.task?.title || '新任务'}」，并写入 ${result.notificationsCreated || 0} 条微信小程序通知。`);
+  await loadDashboard(currentProjectCode);
 }
 
 function getModuleTaskList(tasks, module) {
@@ -932,7 +1129,7 @@ function render(data, mode = 'demo') {
     )
     .join('');
 
-  const reports = data.todayReports || [];
+  renderTaskPublisher(data);
   renderEventPipeline(eventStats, pendingEvents);
   document.querySelector('#pendingEvents').innerHTML = pendingEvents.length
     ? pendingEvents
@@ -983,23 +1180,6 @@ function render(data, mode = 'demo') {
         })
         .join('')
     : '<div class="empty">当前没有 AI 待确认事件。可以点击“生成演示事件”模拟飞书/微信/App/手动录入进入统一 Event 队列。</div>';
-
-  document.querySelector('#reports').innerHTML = reports.length
-    ? reports
-        .map(
-          (report) => `
-          <article class="report-item">
-            <h4>${report.title}</h4>
-            <p>${report.summary || '暂无摘要'}</p>
-            <div class="report-meta">
-              <span class="chip">${report.type}</span>
-              <span class="chip">${formatShortDate(report.reportDate)}</span>
-            </div>
-          </article>
-        `,
-        )
-        .join('')
-    : '<div class="empty">当前项目还没有 AI 日报，后续接入生成流程后会在这里出现。</div>';
 }
 
 async function fetchProjects() {
@@ -1477,6 +1657,11 @@ async function bootstrap() {
   const closeOverviewDetailButton = document.querySelector('#closeOverviewDetail');
   const status = document.querySelector('#loadStatus');
   const quickProjects = document.querySelector('#quickProjects');
+  const publishModeTabs = document.querySelector('#publishModeTabs');
+  const publishRecipientList = document.querySelector('#publishRecipientList');
+  const publishTaskText = document.querySelector('#publishTaskText');
+  const translateTaskPublishButton = document.querySelector('#translateTaskPublish');
+  const confirmTaskPublishButton = document.querySelector('#confirmTaskPublish');
 
   syncProjectInputs(rawProjectIdentifier);
   render(demoData, 'demo');
@@ -1577,6 +1762,77 @@ async function bootstrap() {
       status.textContent = '已生成演示事件：飞书、微信导入、手动录入都已进入 AI 待确认队列。';
     } catch (error) {
       status.textContent = error?.message || '生成演示事件失败，请稍后再试。';
+    }
+  });
+
+  publishModeTabs?.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-publish-mode]');
+    if (!target) {
+      return;
+    }
+
+    publishRecipientMode = target.getAttribute('data-publish-mode') || 'single';
+    latestPublishPreview = null;
+    renderPublishPreview(null);
+
+    const members = getProjectMembers(latestDashboardData);
+    if (publishRecipientMode === 'single') {
+      const firstSelected = [...selectedPublishMemberIds].find((id) => members.some((member) => member.id === id));
+      selectedPublishMemberIds = new Set(firstSelected ? [firstSelected] : members[0] ? [members[0].id] : []);
+    }
+
+    renderTaskPublisher(latestDashboardData || demoData);
+    setTaskPublishStatus('发布对象已更新，请重新 AI 转译后再确认发布。');
+  });
+
+  publishRecipientList?.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-publish-member-id]');
+    if (!target || publishRecipientMode === 'all') {
+      return;
+    }
+
+    const memberId = target.getAttribute('data-publish-member-id');
+    if (!memberId) {
+      return;
+    }
+
+    if (publishRecipientMode === 'single') {
+      selectedPublishMemberIds = new Set([memberId]);
+    } else if (selectedPublishMemberIds.has(memberId)) {
+      selectedPublishMemberIds.delete(memberId);
+    } else {
+      selectedPublishMemberIds.add(memberId);
+    }
+
+    latestPublishPreview = null;
+    renderPublishPreview(null);
+    renderTaskPublisher(latestDashboardData || demoData);
+    setTaskPublishStatus('发布对象已更新，请重新 AI 转译后再确认发布。');
+  });
+
+  publishTaskText?.addEventListener('input', () => {
+    latestPublishPreview = null;
+    renderPublishPreview(null);
+    setTaskPublishStatus('任务描述已更新，请点击 AI 转译生成发布预览。');
+  });
+
+  translateTaskPublishButton?.addEventListener('click', async () => {
+    setTaskPublishStatus('正在 AI 转译任务...');
+    try {
+      await translateTaskPublish();
+    } catch (error) {
+      latestPublishPreview = null;
+      renderPublishPreview(null);
+      setTaskPublishStatus(error?.message || 'AI 转译失败，请稍后再试。');
+    }
+  });
+
+  confirmTaskPublishButton?.addEventListener('click', async () => {
+    setTaskPublishStatus('正在发布任务并写入小程序通知...');
+    try {
+      await confirmTaskPublish();
+    } catch (error) {
+      setTaskPublishStatus(error?.message || '任务发布失败，请稍后再试。');
     }
   });
 
