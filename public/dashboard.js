@@ -62,54 +62,8 @@ const demoData = {
     { role: 'TEMP', _count: { _all: 42 } },
   ],
   overdueTasks: [],
-  pendingEvents: [
-    {
-      id: 'event-demo-1',
-      eventType: 'task_update',
-      title: 'AI识别：舞台彩排时间需要提前确认',
-      description: '群内出现多次关于彩排时间调整的沟通，AI建议项目经理确认是否生成正式任务。',
-      status: 'pending_review',
-      confidence: 0.92,
-      sourceType: 'feishu',
-      sourceChannel: 'demo_event_seed',
-      sourceSender: '陈凯',
-      sourceSenderRole: 'module_leader',
-      rawContent: '导演说彩排时间可能提前到下午三点，舞台组需要尽快确认灯光和音响到场。',
-      visibilityScope: 'module_leader',
-      proposedChanges: {
-        task: {
-          title: '确认舞台彩排提前后的灯光音响到场',
-          moduleName: '舞台执行',
-          ownerName: '陈凯',
-          assistantName: '林霄',
-          priority: 'HIGH',
-        },
-      },
-    },
-    {
-      id: 'event-demo-2',
-      eventType: 'risk',
-      title: 'AI待确认：签到物料数量存在缺口',
-      description: 'AI无法完全确认物料缺口数量，建议进入人工确认队列。',
-      status: 'pending_review',
-      confidence: 0.68,
-      sourceType: 'wechat_import',
-      sourceChannel: 'demo_event_seed',
-      sourceSender: '微信群截图导入',
-      sourceSenderRole: 'staff',
-      rawContent: '胸卡好像少了一批，现场说可能还差 80 个左右？',
-      visibilityScope: 'admin',
-      proposedChanges: {
-        task: {
-          title: '复核签到胸卡缺口并确认是否补打',
-          moduleName: '签到接待',
-          ownerName: '王晴',
-          priority: 'URGENT',
-        },
-      },
-    },
-  ],
-  eventStats: [{ status: 'pending_review', _count: { _all: 2 } }],
+  pendingEvents: [],
+  eventStats: [],
   todayReports: [
     {
       id: 'r1',
@@ -427,6 +381,8 @@ let isStructureDragging = false;
 let publishRecipientMode = 'single';
 let selectedPublishMemberIds = new Set();
 let latestPublishPreview = null;
+let customerServiceMessages = [];
+const CUSTOMER_SERVICE_STORAGE_KEY = 'golden-project:customer-service-history';
 
 function getProjectMembers(data) {
   return (data?.project?.members || []).filter((member) => member?.id);
@@ -474,28 +430,74 @@ function renderPublishPreview(preview) {
   }
 
   if (!preview) {
-    container.classList.remove('visible');
-    container.innerHTML = '';
+    container.classList.remove('has-result');
+    container.classList.add('visible');
+    container.innerHTML = '<div class="publish-preview-empty">AI 转译结果会固定显示在这里，完成转译后可直接手动调整字段。</div>';
     updatePublishButtons();
     return;
   }
 
   const recipients = (preview.recipients || []).map((recipient) => recipient.name).join('、') || '未选择';
   container.classList.add('visible');
+  container.classList.add('has-result');
   container.innerHTML = `
     <div class="publish-preview-title">
       <span>AI 转译结果</span>
-      <strong>${escapeHtml(preview.title || '未命名任务')}</strong>
+      <input id="publishPreviewTitle" value="${escapeHtml(preview.title || '未命名任务')}" maxlength="200" />
     </div>
     <div class="publish-preview-grid">
-      <span>模块</span><strong>${escapeHtml(preview.moduleName || '项目级任务')}</strong>
-      <span>对象</span><strong>${escapeHtml(recipients)}</strong>
-      <span>负责人</span><strong>${escapeHtml(preview.ownerName || '待指定负责人')}</strong>
-      <span>优先级</span><strong>${escapeHtml(getPriorityLabel(preview.priority))}</strong>
-      <span>截止</span><strong>${escapeHtml(preview.dueTimeLabel || formatDate(preview.dueTime))}</strong>
+      <label>
+        <span>模块</span>
+        <input id="publishPreviewModule" value="${escapeHtml(preview.moduleName || '项目级任务')}" maxlength="100" />
+      </label>
+      <label>
+        <span>对象</span>
+        <input id="publishPreviewRecipients" value="${escapeHtml(recipients)}" maxlength="200" />
+      </label>
+      <label>
+        <span>负责人</span>
+        <input id="publishPreviewOwner" value="${escapeHtml(preview.ownerName || '待指定负责人')}" maxlength="100" />
+      </label>
+      <label>
+        <span>优先级</span>
+        <select id="publishPreviewPriority">
+          <option value="LOW" ${preview.priority === 'LOW' ? 'selected' : ''}>低优先级</option>
+          <option value="MEDIUM" ${preview.priority === 'MEDIUM' ? 'selected' : ''}>普通</option>
+          <option value="HIGH" ${preview.priority === 'HIGH' ? 'selected' : ''}>高优先级</option>
+          <option value="URGENT" ${preview.priority === 'URGENT' ? 'selected' : ''}>紧急</option>
+        </select>
+      </label>
+      <label>
+        <span>截止</span>
+        <input id="publishPreviewDueTime" type="datetime-local" value="${escapeHtml(formatDateTimeLocal(preview.dueTime))}" />
+      </label>
     </div>
   `;
   updatePublishButtons();
+}
+
+function getEditedPublishPreview() {
+  if (!latestPublishPreview) {
+    return null;
+  }
+
+  const title = document.querySelector('#publishPreviewTitle')?.value.trim() || latestPublishPreview.title;
+  const moduleName = document.querySelector('#publishPreviewModule')?.value.trim() || latestPublishPreview.moduleName;
+  const ownerName = document.querySelector('#publishPreviewOwner')?.value.trim() || latestPublishPreview.ownerName;
+  const priority = document.querySelector('#publishPreviewPriority')?.value || latestPublishPreview.priority;
+  const dueValue = document.querySelector('#publishPreviewDueTime')?.value || '';
+  const dueTime = dueValue ? new Date(dueValue).toISOString() : latestPublishPreview.dueTime;
+  const moduleId = moduleName === latestPublishPreview.moduleName ? latestPublishPreview.moduleId : undefined;
+
+  return {
+    ...latestPublishPreview,
+    title,
+    moduleId,
+    moduleName,
+    ownerName,
+    priority,
+    dueTime,
+  };
 }
 
 function renderTaskPublisher(data) {
@@ -549,7 +551,173 @@ function renderTaskPublisher(data) {
         .join('')
     : '<div class="empty compact-empty">当前没有可发布对象。加载真实项目后会显示项目成员。</div>';
 
+  const preview = document.querySelector('#publishPreview');
+  if (preview && !preview.innerHTML.trim()) {
+    renderPublishPreview(null);
+  }
   updatePublishButtons();
+}
+
+function getCustomerServiceProjectKey() {
+  return currentProjectCode || 'demo';
+}
+
+function getDefaultCustomerServiceMessages() {
+  return [
+    {
+      role: 'assistant',
+      content: '我在这个项目里待命。你可以问我今天先做什么、有哪些风险、哪些群消息需要确认。',
+    },
+  ];
+}
+
+function readCustomerServiceStore() {
+  try {
+    const raw = window.localStorage.getItem(CUSTOMER_SERVICE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCustomerServiceStore(store) {
+  try {
+    window.localStorage.setItem(CUSTOMER_SERVICE_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // ignore local storage failures
+  }
+}
+
+function persistCustomerServiceMessages() {
+  const store = readCustomerServiceStore();
+  store[getCustomerServiceProjectKey()] = customerServiceMessages;
+  writeCustomerServiceStore(store);
+}
+
+function renderCustomerServiceMessages() {
+  const windowEl = document.querySelector('#customerServiceWindow');
+  if (!windowEl) {
+    return;
+  }
+
+  windowEl.innerHTML = customerServiceMessages
+    .map(
+      (message) => `<div class="customer-message ${message.role}">
+        <span>${message.role === 'user' ? '你' : '客服'}</span>
+        <p>${escapeHtml(message.content)}</p>
+      </div>`,
+    )
+    .join('');
+  windowEl.scrollTop = windowEl.scrollHeight;
+}
+
+function syncCustomerServiceMessages() {
+  const store = readCustomerServiceStore();
+  const projectKey = getCustomerServiceProjectKey();
+  const storedMessages = store[projectKey];
+  customerServiceMessages =
+    Array.isArray(storedMessages) && storedMessages.length
+      ? storedMessages.filter((message) => message && typeof message.role === 'string' && typeof message.content === 'string')
+      : getDefaultCustomerServiceMessages();
+
+  persistCustomerServiceMessages();
+  renderCustomerServiceMessages();
+}
+
+function appendCustomerServiceMessage(role, content) {
+  if (!content) {
+    return;
+  }
+
+  customerServiceMessages.push({ role, content });
+  persistCustomerServiceMessages();
+  renderCustomerServiceMessages();
+}
+
+function setCustomerServiceOpen(open) {
+  const widget = document.querySelector('#customerServiceWidget');
+  const dialog = document.querySelector('#customerServiceDialog');
+  const launcher = document.querySelector('#customerServiceLauncher');
+  if (!widget || !dialog || !launcher) {
+    return;
+  }
+
+  widget.classList.toggle('open', open);
+  dialog.setAttribute('aria-hidden', open ? 'false' : 'true');
+  launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    document.querySelector('#customerServiceInput')?.focus();
+  }
+}
+
+function buildAgentReply(question) {
+  const data = latestDashboardData || demoData;
+  const tasks = sortTasks(data.tasks || data.overdueTasks || []);
+  const eventStats = toCountMap(data.eventStats || [], 'status');
+  const pendingCount = eventStats.pending_review || (data.pendingEvents || []).length || 0;
+  const overdueTasks = tasks.filter((task) => task.status === 'OVERDUE');
+  const highTasks = tasks.filter((task) => task.priority === 'URGENT' || task.priority === 'HIGH');
+  const nextTask = tasks.find((task) => task.status !== 'COMPLETED') || tasks[0];
+  const normalized = question.trim();
+
+  if (/风险|逾期|危险/.test(normalized)) {
+    return `当前有 ${overdueTasks.length} 个逾期节点、${highTasks.length} 个高优先节点。建议先看「${nextTask?.title || '暂无下一节点'}」，再处理事件列表里的 ${pendingCount} 个待确认事件。`;
+  }
+
+  if (/今天|下一步|优先|先做/.test(normalized)) {
+    return nextTask
+      ? `建议先推进「${nextTask.title}」，负责人 ${nextTask.owner?.name || '未指派'}，截止 ${formatDate(nextTask.dueTime)}。`
+      : '当前没有排在前面的待处理节点，可以先补充任务或查看事件列表。';
+  }
+
+  if (/事件|确认/.test(normalized)) {
+    return `事件列表里当前待确认 ${pendingCount} 个。已确认和已发布事件会继续留在列表下方，方便追溯。`;
+  }
+
+  return `我已读取当前项目：共有 ${tasks.length} 个任务、${pendingCount} 个待确认事件、${highTasks.length} 个高优先节点。你可以继续问“今天先做什么”或“最高风险是什么”。`;
+}
+
+async function askCustomerAgent(question, options = {}) {
+  const {
+    provider = 'codex',
+    sessionId = 'dashboard',
+    fallbackToBuiltin = true,
+  } = options;
+
+  if (!currentProjectCode) {
+    return buildAgentReply(question);
+  }
+
+  const response = await fetch(
+    `/api/integrations/agents/projects/${encodeURIComponent(currentProjectCode)}/customer-service/chat`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        sessionId,
+        message: question,
+        includeProjectContext: true,
+        timeoutSeconds: 30,
+      }),
+    },
+  );
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.reason || payload.message || `Agent request failed: ${response.status}`);
+  }
+
+  if (payload.reply) {
+    return payload.reply;
+  }
+
+  if (fallbackToBuiltin) {
+    return buildAgentReply(question);
+  }
+
+  throw new Error('agent_empty_reply');
 }
 
 function getPublishPayload() {
@@ -599,13 +767,14 @@ async function confirmTaskPublish() {
     throw new Error('请先完成 AI 转译');
   }
 
+  const editedPreview = getEditedPublishPreview();
   const payload = {
     ...getPublishPayload(),
-    title: latestPublishPreview.title,
-    moduleId: latestPublishPreview.moduleId,
-    moduleName: latestPublishPreview.moduleName,
-    priority: latestPublishPreview.priority,
-    dueTime: latestPublishPreview.dueTime,
+    title: editedPreview.title,
+    moduleId: editedPreview.moduleId,
+    moduleName: editedPreview.moduleName,
+    priority: editedPreview.priority,
+    dueTime: editedPreview.dueTime,
   };
 
   const response = await fetch(`/api/projects/${encodeURIComponent(currentProjectCode)}/tasks/publish`, {
@@ -911,7 +1080,8 @@ function render(data, mode = 'demo') {
   const modules = project.modules || [];
   const tasks = data.tasks || data.overdueTasks || [];
   const feishuProposals = data.feishuProposals || [];
-  const pendingEvents = data.pendingEvents || [];
+  const eventList = data.events || data.pendingEvents || [];
+  const pendingEvents = data.pendingEvents || eventList.filter((event) => event.status === 'pending_review');
   const eventStats = toCountMap(data.eventStats || [], 'status');
   const orderedTasks = sortTasks(tasks);
   const groupedTasks = groupTasksByDay(tasks);
@@ -1131,12 +1301,13 @@ function render(data, mode = 'demo') {
 
   renderTaskPublisher(data);
   renderEventPipeline(eventStats, pendingEvents);
-  document.querySelector('#pendingEvents').innerHTML = pendingEvents.length
-    ? pendingEvents
+  document.querySelector('#pendingEvents').innerHTML = eventList.length
+    ? eventList
         .map((event) => {
           const proposedTask = getEventTask(event);
           const confidence = formatConfidence(event.confidence);
           const confidenceWidth = getConfidenceWidth(event.confidence);
+          const isPending = event.status === 'pending_review';
 
           return `
             <article class="feishu-item">
@@ -1164,22 +1335,29 @@ function render(data, mode = 'demo') {
                   <span>${event.rawContent || '暂无原文'}</span>
                 </div>
               </div>
-              <div class="event-actions">
-                <button class="button primary" type="button" data-event-action="confirm-task" data-event-id="${event.id}">确认入库</button>
-                <button class="button secondary" type="button" data-event-action="confirm-edit" data-event-id="${event.id}">修改确认</button>
-                <button class="button secondary" type="button" data-event-action="duplicate" data-event-id="${event.id}">任务重复</button>
-                <button class="button tertiary" type="button" data-event-action="more-info" data-event-id="${event.id}">补充信息</button>
-                <button class="button danger" type="button" data-event-action="reject" data-event-id="${event.id}">驳回</button>
-              </div>
+              ${
+                isPending
+                  ? `<div class="event-actions">
+                      <button class="button primary" type="button" data-event-action="confirm-task" data-event-id="${event.id}">确认入库</button>
+                      <button class="button secondary" type="button" data-event-action="confirm-edit" data-event-id="${event.id}">修改确认</button>
+                      <button class="button secondary" type="button" data-event-action="duplicate" data-event-id="${event.id}">任务重复</button>
+                      <button class="button tertiary" type="button" data-event-action="more-info" data-event-id="${event.id}">补充信息</button>
+                      <button class="button danger" type="button" data-event-action="reject" data-event-id="${event.id}">驳回</button>
+                    </div>`
+                  : `<div class="event-actions locked">
+                      <span class="chip">${eventStatusMap[event.status] || event.status}</span>
+                      <span class="chip">${event.confirmedAt ? `确认 ${formatDate(event.confirmedAt)}` : `更新 ${formatDate(event.updatedAt || event.createdAt)}`}</span>
+                    </div>`
+              }
               <div class="feishu-foot">
-                <span>Demo 阶段：即使高置信度，也需要项目经理点击确认。</span>
+                <span>${isPending ? '待确认事件需要项目经理处理。' : '事件已进入正式流程，继续保留在全量事件列表中。'}</span>
                 <strong>${formatDate(event.createdAt)}</strong>
               </div>
             </article>
           `;
         })
         .join('')
-    : '<div class="empty">当前没有 AI 待确认事件。可以点击“生成演示事件”模拟飞书/微信/App/手动录入进入统一 Event 队列。</div>';
+    : '<div class="empty">当前项目还没有事件。后续飞书、微信、App 或手动录入的内容会进入这里统一展示。</div>';
 }
 
 async function fetchProjects() {
@@ -1221,6 +1399,7 @@ async function loadDashboard(projectId) {
   if (!projectId) {
     render(demoData, 'demo');
     currentProjectCode = '';
+    syncCustomerServiceMessages();
     stopEventPolling();
     return;
   }
@@ -1238,6 +1417,7 @@ async function loadDashboard(projectId) {
   render(data, 'live');
   latestDashboardData = data;
   currentProjectCode = projectId;
+  syncCustomerServiceMessages();
   startEventPolling();
 }
 
@@ -1257,7 +1437,12 @@ function formatDateTimeLocal(value) {
 }
 
 function openEventReviewModal(eventId) {
-  const event = (latestDashboardData?.pendingEvents || demoData.pendingEvents || []).find((item) => item.id === eventId);
+  const event = [
+    ...(latestDashboardData?.events || []),
+    ...(latestDashboardData?.pendingEvents || []),
+    ...(demoData.events || []),
+    ...(demoData.pendingEvents || []),
+  ].find((item) => item.id === eventId);
   if (!event) {
     throw new Error('未找到要确认的事件');
   }
@@ -1647,7 +1832,6 @@ async function bootstrap() {
   const openIntakeWorkbookButton = document.querySelector('#openIntakeWorkbook');
   const openProjectStructureButton = document.querySelector('#openProjectStructure');
   const openProjectFilesButton = document.querySelector('#openProjectFiles');
-  const seedDemoEventsButton = document.querySelector('#seedDemoEvents');
   const pendingEventsContainer = document.querySelector('#pendingEvents');
   const eventReviewModal = document.querySelector('#eventReviewModal');
   const eventReviewForm = document.querySelector('#eventReviewForm');
@@ -1662,9 +1846,14 @@ async function bootstrap() {
   const publishTaskText = document.querySelector('#publishTaskText');
   const translateTaskPublishButton = document.querySelector('#translateTaskPublish');
   const confirmTaskPublishButton = document.querySelector('#confirmTaskPublish');
+  const customerServiceLauncher = document.querySelector('#customerServiceLauncher');
+  const customerServiceClose = document.querySelector('#customerServiceClose');
+  const customerServiceForm = document.querySelector('#customerServiceForm');
+  const customerServiceInput = document.querySelector('#customerServiceInput');
 
   syncProjectInputs(rawProjectIdentifier);
   render(demoData, 'demo');
+  syncCustomerServiceMessages();
 
   try {
     const projects = await fetchProjects();
@@ -1753,18 +1942,6 @@ async function bootstrap() {
     window.location.href = `/console/files${query}`;
   });
 
-  seedDemoEventsButton.addEventListener('click', async () => {
-    const projectCode = select.value.trim() || currentProjectCode;
-    status.textContent = '正在生成 Event-driven 演示事件...';
-
-    try {
-      await seedDemoEvents(projectCode);
-      status.textContent = '已生成演示事件：飞书、微信导入、手动录入都已进入 AI 待确认队列。';
-    } catch (error) {
-      status.textContent = error?.message || '生成演示事件失败，请稍后再试。';
-    }
-  });
-
   publishModeTabs?.addEventListener('click', (event) => {
     const target = event.target.closest('[data-publish-mode]');
     if (!target) {
@@ -1833,6 +2010,36 @@ async function bootstrap() {
       await confirmTaskPublish();
     } catch (error) {
       setTaskPublishStatus(error?.message || '任务发布失败，请稍后再试。');
+    }
+  });
+
+  customerServiceLauncher?.addEventListener('click', () => {
+    const widget = document.querySelector('#customerServiceWidget');
+    setCustomerServiceOpen(!widget?.classList.contains('open'));
+  });
+
+  customerServiceClose?.addEventListener('click', () => {
+    setCustomerServiceOpen(false);
+  });
+
+  customerServiceForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const question = customerServiceInput?.value.trim() || '';
+    if (!question) {
+      return;
+    }
+
+    appendCustomerServiceMessage('user', question);
+    customerServiceInput.value = '';
+    try {
+      const reply = await askCustomerAgent(question, {
+        provider: 'codex',
+        sessionId: 'customer-service-widget',
+        fallbackToBuiltin: true,
+      });
+      appendCustomerServiceMessage('assistant', reply);
+    } catch (error) {
+      appendCustomerServiceMessage('assistant', `${error?.message || '客服暂时不可用'}。先给你本地判断：${buildAgentReply(question)}`);
     }
   });
 

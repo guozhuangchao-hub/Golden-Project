@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ChatAgentDto } from './dto/chat-agent.dto';
 import { UpsertAgentIntegrationDto } from './dto/upsert-agent-integration.dto';
 import { AgentsService } from './agents.service';
 
@@ -33,6 +34,14 @@ export class AgentsController {
   @Post('webhooks/events')
   handleWebhook(@Body() body: Record<string, unknown>) {
     return this.agentsService.handleWebhook(body);
+  }
+
+  @Post('projects/:projectId/customer-service/chat')
+  chat(
+    @Param('projectId') projectId: string,
+    @Body() dto: ChatAgentDto,
+  ) {
+    return this.agentsService.chat(projectId, dto);
   }
 
   @Post('events/:eventId/ack')

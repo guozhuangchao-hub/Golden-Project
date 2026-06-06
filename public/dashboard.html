@@ -103,31 +103,16 @@
         </article>
       </section>
 
-      <section class="grid">
-        <div class="stack">
-          <article class="panel">
+      <section class="command-grid">
+          <article class="panel event-list-panel">
             <div class="panel-header">
               <div>
-                <h3>AI 待确认事件</h3>
-                <p>飞书、微信、App、手动录入都会先进入统一 Event 队列，项目经理确认后才正式生效。</p>
+                <h3>事件列表</h3>
+                <p>所有来源的事件都会进入统一 Event 列表，待确认事项在上方，已确认和已发布事项自动向下排列。</p>
               </div>
-              <button class="button secondary compact" id="seedDemoEvents" type="button">生成演示事件</button>
             </div>
             <div class="event-pipeline" id="eventPipeline"></div>
             <div class="feishu-list" id="pendingEvents"></div>
-          </article>
-        </div>
-
-        <div class="stack">
-          <article class="panel dark">
-            <div class="panel-header">
-              <div>
-                <h3>AI 风险信号</h3>
-                <p>后续这里会优先接扣子生成的风险提示和行动建议，而不是普通摘要。</p>
-              </div>
-              <span class="badge">AI Signal</span>
-            </div>
-            <div class="signal-list" id="signals"></div>
           </article>
 
           <article class="panel task-publish-panel">
@@ -162,7 +147,19 @@
               <p class="subtle" id="taskPublishStatus">选择对象并输入任务描述后即可发布。</p>
             </div>
           </article>
-        </div>
+      </section>
+
+      <section class="intelligence-row">
+        <article class="panel dark risk-panel">
+          <div class="panel-header">
+            <div>
+              <h3>AI 风险信号</h3>
+              <p>后续这里会优先接扣子生成的风险提示和行动建议，而不是普通摘要。</p>
+            </div>
+            <span class="badge">AI Signal</span>
+          </div>
+          <div class="signal-list" id="signals"></div>
+        </article>
       </section>
 
       <section class="panel roadmap-panel">
@@ -254,6 +251,31 @@
         <div class="overview-detail-list" id="overviewDetailList"></div>
       </section>
     </div>
+
+    <aside class="customer-service-widget" id="customerServiceWidget" aria-label="项目客服">
+      <button class="customer-service-launcher" id="customerServiceLauncher" type="button" aria-expanded="false">
+        <span>项目客服</span>
+      </button>
+      <section class="customer-service-dialog" id="customerServiceDialog" aria-hidden="true">
+        <div class="customer-service-header">
+          <div>
+            <h3>项目客服</h3>
+            <p>当前项目上下文内回答任务、风险和下一步动作。</p>
+          </div>
+          <button class="customer-service-close" id="customerServiceClose" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="customer-service-window" id="customerServiceWindow">
+          <div class="customer-message assistant">
+            <span>客服</span>
+            <p>我在这个项目里待命。你可以问我今天先做什么、有哪些风险、哪些群消息需要确认。</p>
+          </div>
+        </div>
+        <form class="customer-service-input-row" id="customerServiceForm">
+          <input id="customerServiceInput" maxlength="240" placeholder="问项目客服..." />
+          <button class="button primary" type="submit">发送</button>
+        </form>
+      </section>
+    </aside>
 
     <script>
       (function () {

@@ -22,6 +22,8 @@
     "build:intake-template": "python3 scripts/build-intake-template.py",
     "build:brics-intake": "python3 scripts/build-brics-intake-workbook.py",
     "import:intake": "python3 scripts/import-project-intake-xlsx.py",
+    "wechat:doctor": "node scripts/wechat_doctor_mac.js",
+    "wechat:ingest": "node scripts/wechat_ingest_mac.js",
     "cleanup:projects": "node scripts/cleanup-duplicate-projects.js",
     "sync:projects": "node scripts/sync-project-folders.js"
   },
@@ -37,6 +39,7 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@jackwener/wx-cli": "^0.3.0",
     "@nestjs/cli": "^11.0.7",
     "@nestjs/mapped-types": "^2.1.0",
     "@nestjs/schematics": "^11.0.3",

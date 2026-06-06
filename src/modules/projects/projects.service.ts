@@ -4,7 +4,7 @@ import { constants as fsConstants } from 'fs';
 import { basename, extname, isAbsolute, join, normalize, relative } from 'path';
 import { pathToFileURL } from 'url';
 import { execFile } from 'child_process';
-import { MemberRole, MemberStatus, ProjectStatus, UserStatus } from '@prisma/client';
+import { MemberRole, MemberStatus, NotificationChannel, ProjectStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BootstrapProjectDto } from './dto/bootstrap-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -28,6 +28,7 @@ export class ProjectsService {
 
   private readonly projectRoot = join(process.cwd(), '项目列表');
   private readonly templateRoot = join(this.projectRoot, '项目模板');
+  private readonly initialDocsFolderName = '初始文档';
   private readonly intakeTemplatePath = join(this.templateRoot, '前期录入模板.xlsx');
   private readonly infoTemplatePath = join(this.templateRoot, '项目信息.md');
   private readonly projectCodeSuffix = 'YHGG';
@@ -544,6 +545,7 @@ export class ProjectsService {
     const createdDate = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}-${String(createdAt.getDate()).padStart(2, '0')}`;
     const folderName = await this.resolveUniqueFolderName(projectName, dateStamp);
     const folderPath = join(this.projectRoot, folderName);
+    const initialDocsPath = join(folderPath, this.initialDocsFolderName);
     const workbookName = `${this.normalizeFolderName(projectName) || '新项目'}-${dateStamp}.xlsx`;
     const workbookPath = join(folderPath, workbookName);
     const metaPath = join(folderPath, 'project.meta.json');
@@ -555,6 +557,7 @@ export class ProjectsService {
     }
 
     await mkdir(folderPath, { recursive: true });
+    await mkdir(initialDocsPath, { recursive: true });
     await copyFile(this.intakeTemplatePath, workbookPath);
 
     const meta = this.buildBootstrapMeta({
@@ -592,6 +595,7 @@ export class ProjectsService {
       project,
       folderName,
       folderPath,
+      initialDocsPath,
       workbookName,
       workbookPath,
       metaPath,
@@ -970,6 +974,75 @@ export class ProjectsService {
         categoryCounts,
       },
     };
+  }
+
+  async getProjectNotifications(identifier: string) {
+    const project = await this.resolveProjectByIdentifier(identifier);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    const notifications = await this.prisma.notification.findMany({
+      where: {
+        projectId: project.id,
+        channel: NotificationChannel.MINI_PROGRAM,
+      },
+      include: {
+        project: true,
+        task: {
+          include: {
+            module: true,
+            owner: true,
+          },
+        },
+        receiver: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 80,
+    });
+
+    const latestByTask = new Map<string, (typeof notifications)[number]>();
+    notifications.forEach((notification) => {
+      const key = notification.taskId || notification.id;
+      if (!latestByTask.has(key)) {
+        latestByTask.set(key, notification);
+      }
+    });
+
+    return Array.from(latestByTask.values()).map((notification) => ({
+      id: notification.id,
+      taskId: notification.taskId,
+      title: notification.task?.title || notification.title,
+      content: notification.content,
+      source: notification.payload,
+      channel: notification.channel,
+      status: notification.status,
+      createdAt: notification.createdAt,
+      receiver: {
+        id: notification.receiver.id,
+        name: notification.receiver.name,
+      },
+      project: {
+        id: project.id,
+        code: project.code,
+        name: project.name,
+      },
+      task: notification.task
+        ? {
+            id: notification.task.id,
+            title: notification.task.title,
+            description: notification.task.description,
+            status: notification.task.status,
+            priority: notification.task.priority,
+            dueTime: notification.task.dueTime,
+            moduleName: notification.task.module?.name || '未分组',
+            ownerName: notification.task.owner?.name || '待指定',
+          }
+        : null,
+    }));
   }
 
   async getProjectFileDownload(identifier: string, relativeFilePath: string) {

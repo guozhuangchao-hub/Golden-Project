@@ -109,21 +109,10 @@ export class DashboardService {
         confirmedBy: true,
       },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-      take: 20,
+      take: 80,
     });
 
-    const pendingEvents = await this.prisma.event.findMany({
-      where: {
-        projectId: project.id,
-        status: 'pending_review',
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
-      orderBy: [{ confidence: 'asc' }, { createdAt: 'desc' }],
-      take: 8,
-    });
+    const pendingEvents = events.filter((event) => event.status === 'pending_review');
 
     const eventStats = await this.prisma.event.groupBy({
       by: ['status'],

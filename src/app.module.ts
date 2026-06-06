@@ -8,6 +8,7 @@ import { UiModule } from './modules/ui/ui.module';
 import { FeishuModule } from './modules/integrations/feishu/feishu.module';
 import { AgentsModule } from './modules/integrations/agents/agents.module';
 import { EventsModule } from './modules/events/events.module';
+import { WechatModule } from './modules/integrations/wechat/wechat.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { EventsModule } from './modules/events/events.module';
     DashboardModule,
     UiModule,
     FeishuModule,
+    WechatModule,
     AgentsModule,
     EventsModule,
   ],

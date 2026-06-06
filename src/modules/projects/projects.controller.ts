@@ -70,6 +70,11 @@ export class ProjectsController {
     return this.projectsService.getProjectFiles(id);
   }
 
+  @Get(':id/notifications')
+  getProjectNotifications(@Param('id') id: string) {
+    return this.projectsService.getProjectNotifications(id);
+  }
+
   @Get(':id/files/download')
   async downloadProjectFile(
     @Param('id') id: string,

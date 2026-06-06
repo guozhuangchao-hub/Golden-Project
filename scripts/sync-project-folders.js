@@ -21,6 +21,7 @@ const ROOT_DIR = path.join(process.cwd(), '项目列表');
 const META_FILE_NAME = 'project.meta.json';
 const WORKBOOK_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xls']);
 const TEMPLATE_FOLDER_NAME = '项目模板';
+const INITIAL_DOCS_FOLDER_NAME = '初始文档';
 const IMPORT_USER_EMAIL = 'system-import@golden.local';
 const IMPORT_SCRIPT = path.join(process.cwd(), 'scripts', 'import-project-intake-xlsx.py');
 
@@ -95,7 +96,7 @@ function findProjectFolders(dirPath) {
     const fullPath = path.join(dirPath, entry.name);
 
     if (entry.isDirectory()) {
-      if (entry.name === TEMPLATE_FOLDER_NAME) {
+      if (entry.name === TEMPLATE_FOLDER_NAME || entry.name === INITIAL_DOCS_FOLDER_NAME) {
         continue;
       }
 

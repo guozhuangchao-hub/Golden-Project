@@ -107,6 +107,18 @@ enum FeishuProposalStatus {
   APPLIED
 }
 
+enum WechatInboundMessageStatus {
+  NEW
+  PROCESSED
+  IGNORED
+}
+
+enum WechatDigestStatus {
+  CREATED
+  APPLIED
+  SKIPPED
+}
+
 enum AgentInboundEventStatus {
   NEW
   PROCESSING
@@ -193,6 +205,9 @@ model Project {
   feishuSetting       FeishuProjectSetting?
   feishuMessages      FeishuMessage[]           @relation("ProjectFeishuMessages")
   feishuTaskProposals FeishuTaskProposal[]      @relation("ProjectFeishuTaskProposals")
+  wechatSetting       WechatProjectSetting?
+  wechatMessages      WechatMessage[]           @relation("ProjectWechatMessages")
+  wechatDigests       WechatTaskDigest[]        @relation("ProjectWechatTaskDigests")
   agentIntegrations   AgentIntegrationSetting[]
   agentEvents         AgentInboundEvent[]
   events              Event[]
@@ -421,6 +436,70 @@ model FeishuTaskProposal {
   @@index([projectId, summaryDate])
   @@index([status, summaryDate])
   @@map("feishu_task_proposals")
+}
+
+model WechatProjectSetting {
+  id                    String         @id @default(cuid())
+  projectId             String         @unique @map("project_id")
+  enabled               Boolean        @default(true)
+  groupNames            Json?          @map("group_names")
+  digestIntervalMinutes Int            @default(10) @map("digest_interval_minutes")
+  lastDigestAt          DateTime?      @map("last_digest_at")
+  nextDigestAt          DateTime?      @map("next_digest_at")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  project               Project        @relation(fields: [projectId], references: [id])
+  messages              WechatMessage[]
+  digests               WechatTaskDigest[]
+
+  @@index([enabled, nextDigestAt])
+  @@map("wechat_project_settings")
+}
+
+model WechatMessage {
+  id                String                     @id @default(cuid())
+  projectId         String                     @map("project_id")
+  settingId         String?                    @map("setting_id")
+  externalMessageId String                     @unique @map("external_message_id") @db.VarChar(160)
+  groupId           String?                    @map("group_id") @db.VarChar(120)
+  groupName         String                     @map("group_name") @db.VarChar(160)
+  senderId          String?                    @map("sender_id") @db.VarChar(120)
+  senderName        String                     @map("sender_name") @db.VarChar(100)
+  content           String
+  messageType       String?                    @map("message_type") @db.VarChar(50)
+  rawPayload        Json?                      @map("raw_payload")
+  receivedAt        DateTime                   @default(now()) @map("received_at")
+  processedAt       DateTime?                  @map("processed_at")
+  status            WechatInboundMessageStatus @default(NEW)
+  project           Project                    @relation("ProjectWechatMessages", fields: [projectId], references: [id])
+  setting           WechatProjectSetting?      @relation(fields: [settingId], references: [id])
+
+  @@index([projectId, receivedAt])
+  @@index([projectId, status, receivedAt])
+  @@index([groupName, receivedAt])
+  @@map("wechat_messages")
+}
+
+model WechatTaskDigest {
+  id             String               @id @default(cuid())
+  projectId      String               @map("project_id")
+  settingId      String?              @map("setting_id")
+  windowStart    DateTime             @map("window_start")
+  windowEnd      DateTime             @map("window_end")
+  title          String               @db.VarChar(200)
+  summary        String
+  sourceMessages Json?                @map("source_messages")
+  extractedTasks Json?                @map("extracted_tasks")
+  createdTaskIds Json?                @map("created_task_ids")
+  status         WechatDigestStatus   @default(CREATED)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  project        Project              @relation("ProjectWechatTaskDigests", fields: [projectId], references: [id])
+  setting        WechatProjectSetting? @relation(fields: [settingId], references: [id])
+
+  @@index([projectId, windowEnd])
+  @@index([status, createdAt])
+  @@map("wechat_task_digests")
 }
 
 model AgentIntegrationSetting {

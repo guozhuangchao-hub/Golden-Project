@@ -25,4 +25,7 @@ export class UpsertAgentIntegrationDto {
   @IsOptional()
   @IsArray()
   capabilities?: string[];
+
+  @IsOptional()
+  config?: Record<string, unknown>;
 }

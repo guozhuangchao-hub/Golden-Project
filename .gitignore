@@ -8,3 +8,15 @@ coverage
 *.log
 .playwright-cli
 output
+.data
+config.json
+all_keys.json
+decrypted
+__pycache__/
+*.pyc
+
+# local project materials
+项目列表/*
+!项目列表/README.md
+!项目列表/2026上海新品发布会/
+!项目列表/2026上海新品发布会/**

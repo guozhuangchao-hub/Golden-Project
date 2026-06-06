@@ -1,0 +1,424 @@
+{
+  "projectName": "2026 上海新品发布会",
+  "shortName": "2026上海新品发布会",
+  "folderName": "2026上海新品发布会",
+  "projectCode": "GP-DEMO-2026-01",
+  "projectType": "product_launch",
+  "projectStatus": "active",
+  "city": "上海",
+  "projectDescription": "用于 Golden Project MVP 演示的活动项目，覆盖舞台、签到、物料、接送四个模块。活动于上海西岸艺术中心举办，包含新品发布主舞台、VIP签到、物料统筹和嘉宾接送四个核心模块。",
+  "projectManager": "赵总",
+  "businessContact": "赵总",
+  "dateRange": {
+    "start": "2026-06-08",
+    "end": "2026-06-10",
+    "peakWindowStart": "2026-06-09",
+    "peakWindowEnd": "2026-06-10"
+  },
+  "sourceDocument": {
+    "fileName": "",
+    "sheetName": "",
+    "title": "Golden Project MVP 演示项目"
+  },
+  "summary": {
+    "activityCount": 4,
+    "taskItemCount": 7,
+    "locationCount": 4,
+    "departmentCount": 4,
+    "contactCount": 8
+  },
+  "primaryActivities": [
+    "新品发布主舞台",
+    "VIP嘉宾签到与接待",
+    "物料统筹与布撤场",
+    "嘉宾接送与车辆调度"
+  ],
+  "primaryVenues": [
+    "上海西岸艺术中心 主舞台",
+    "VIP 签到处",
+    "物料仓",
+    "嘉宾接送专线"
+  ],
+  "primaryDepartments": [
+    "项目总控组",
+    "舞台执行组",
+    "签到接待组",
+    "物料统筹组",
+    "嘉宾接送组"
+  ],
+  "keyContacts": [
+    "赵总",
+    "陈凯",
+    "王晴",
+    "孙涛",
+    "刘颖",
+    "林霄",
+    "临时工阿周",
+    "临时工小李"
+  ],
+  "recommendedModules": [
+    "签到接待",
+    "舞台执行",
+    "物料统筹",
+    "嘉宾接送"
+  ],
+  "moduleDetails": [
+    {
+      "name": "签到接待",
+      "description": "负责来宾签到、证件和志愿者排班。",
+      "startDate": "2026-06-06",
+      "endDate": "2026-06-10",
+      "owner": "王晴",
+      "remark": "含临时工培训和点位图推送"
+    },
+    {
+      "name": "舞台执行",
+      "description": "负责彩排、控台、灯光音响联动。",
+      "startDate": "2026-06-05",
+      "endDate": "2026-06-10",
+      "owner": "陈凯",
+      "remark": "含主持人彩排和话筒编号核对"
+    },
+    {
+      "name": "物料统筹",
+      "description": "负责物料出入库、布场和返场。",
+      "startDate": "2026-06-04",
+      "endDate": "2026-06-10",
+      "owner": "孙涛",
+      "remark": "含主视觉喷绘安装和返场清点"
+    },
+    {
+      "name": "嘉宾接送",
+      "description": "负责车辆调度、司机安排和嘉宾时间协调。",
+      "startDate": "2026-06-07",
+      "endDate": "2026-06-10",
+      "owner": "刘颖",
+      "remark": "高峰时段需补商务车"
+    }
+  ],
+  "activityDetails": [
+    {
+      "name": "新品发布主舞台",
+      "date": "2026-06-09",
+      "time": "14:00-17:00",
+      "location": "上海西岸艺术中心 主舞台",
+      "module": "舞台执行",
+      "owner": "陈凯",
+      "assistant": "林霄",
+      "priority": "紧急",
+      "status": "执行中",
+      "remark": "核心节点，含灯光彩排和音视频联调"
+    },
+    {
+      "name": "VIP嘉宾签到与证件发放",
+      "date": "2026-06-09",
+      "time": "09:00-12:00",
+      "location": "VIP 签到处",
+      "module": "签到接待",
+      "owner": "王晴",
+      "assistant": "临时工小李",
+      "priority": "高",
+      "status": "已确认",
+      "remark": "VIP名单和专属动线已锁定"
+    },
+    {
+      "name": "物料统筹与布场",
+      "date": "2026-06-08",
+      "time": "08:00-18:00",
+      "location": "上海西岸艺术中心",
+      "module": "物料统筹",
+      "owner": "孙涛",
+      "assistant": "临时工阿周",
+      "priority": "高",
+      "status": "已确认",
+      "remark": "主视觉喷绘安装完成"
+    },
+    {
+      "name": "嘉宾接送调度",
+      "date": "2026-06-09",
+      "time": "08:00-18:00",
+      "location": "嘉宾接送专线",
+      "module": "嘉宾接送",
+      "owner": "刘颖",
+      "assistant": "",
+      "priority": "高",
+      "status": "执行中",
+      "remark": "高峰16:00-17:00需补商务车"
+    }
+  ],
+  "venueDetails": [
+    {
+      "name": "上海西岸艺术中心 主舞台",
+      "purpose": "新品发布活动主场地",
+      "activity": "新品发布主舞台",
+      "department": "舞台执行组",
+      "owner": "陈凯",
+      "contact": "13800000002",
+      "status": "已锁定",
+      "remark": "含大屏、返听与提词器"
+    },
+    {
+      "name": "VIP 签到处",
+      "purpose": "VIP 签到与证件发放",
+      "activity": "VIP嘉宾签到与证件发放",
+      "department": "签到接待组",
+      "owner": "王晴",
+      "contact": "13800000004",
+      "status": "已锁定",
+      "remark": "双通道签到"
+    },
+    {
+      "name": "物料仓",
+      "purpose": "物料出入库与存储",
+      "activity": "物料统筹与布场",
+      "department": "物料统筹组",
+      "owner": "孙涛",
+      "contact": "13800000005",
+      "status": "已锁定",
+      "remark": "含返场清点计划"
+    },
+    {
+      "name": "嘉宾接送专线",
+      "purpose": "VIP嘉宾酒店-场馆往返接送",
+      "activity": "嘉宾接送调度",
+      "department": "嘉宾接送组",
+      "owner": "刘颖",
+      "contact": "13800000006",
+      "status": "已确认",
+      "remark": "7座商务车2辆，高峰需加1辆"
+    }
+  ],
+  "departmentContacts": [
+    {
+      "unit": "项目总控组",
+      "role": "项目总控",
+      "contact": "赵总",
+      "mobile": "13800000001",
+      "feishuId": "ou_demo_zhaozong",
+      "matter": "项目总控与整体调度",
+      "level": "核心",
+      "remark": "项目经理"
+    },
+    {
+      "unit": "舞台执行组",
+      "role": "舞台组长",
+      "contact": "陈凯",
+      "mobile": "13800000002",
+      "feishuId": "ou_demo_chenkai",
+      "matter": "舞台彩排、灯光音响、主持人对接",
+      "level": "核心",
+      "remark": "舞台执行负责人"
+    },
+    {
+      "unit": "签到接待组",
+      "role": "签到组长",
+      "contact": "王晴",
+      "mobile": "13800000004",
+      "feishuId": "ou_demo_wangqing",
+      "matter": "来宾签到、证件制作、志愿者排班",
+      "level": "核心",
+      "remark": "签到组负责人"
+    },
+    {
+      "unit": "物料统筹组",
+      "role": "物料组长",
+      "contact": "孙涛",
+      "mobile": "13800000005",
+      "feishuId": "ou_demo_suntao",
+      "matter": "物料出入库、布场和返场统筹",
+      "level": "核心",
+      "remark": "物料组负责人"
+    },
+    {
+      "unit": "嘉宾接送组",
+      "role": "接送组长",
+      "contact": "刘颖",
+      "mobile": "13800000006",
+      "feishuId": "ou_demo_liuying",
+      "matter": "车辆调度、司机安排、嘉宾时间协调",
+      "level": "核心",
+      "remark": "接送组负责人"
+    },
+    {
+      "unit": "舞台执行组",
+      "role": "舞台执行",
+      "contact": "林霄",
+      "mobile": "13800000003",
+      "feishuId": "ou_demo_linxiao",
+      "matter": "舞台执行与控台支持",
+      "level": "普通",
+      "remark": "舞台执行人员"
+    },
+    {
+      "unit": "签到接待组",
+      "role": "签到临时工",
+      "contact": "临时工小李",
+      "mobile": "13800000007",
+      "feishuId": "",
+      "matter": "签到辅助与引导",
+      "level": "临时",
+      "remark": "临时工作人员"
+    },
+    {
+      "unit": "物料统筹组",
+      "role": "物料临时工",
+      "contact": "临时工阿周",
+      "mobile": "13800000008",
+      "feishuId": "",
+      "matter": "物料搬运与返场清点",
+      "level": "临时",
+      "remark": "临时工作人员"
+    }
+  ],
+  "supplierDetails": [
+    {
+      "name": "西岸艺术中心",
+      "service": "场地租赁",
+      "contact": "场地经理",
+      "phone": "",
+      "contractStatus": "已签约",
+      "owner": "赵总",
+      "remark": "含设备使用条款"
+    },
+    {
+      "name": "映现场技术",
+      "service": "灯光音响与大屏执行",
+      "contact": "何晨",
+      "phone": "13700010002",
+      "contractStatus": "已签约",
+      "owner": "陈凯",
+      "remark": "主舞台驻场"
+    },
+    {
+      "name": "快线租车",
+      "service": "嘉宾接送商务车",
+      "contact": "罗凯",
+      "phone": "13700010004",
+      "contractStatus": "已签约",
+      "owner": "刘颖",
+      "remark": "商务车 2 辆，高峰需加 1 辆"
+    }
+  ],
+  "taskDrafts": [
+    {
+      "content": "更新主视觉喷绘安装点位",
+      "module": "物料统筹",
+      "owner": "孙涛",
+      "assistant": "",
+      "startTime": "2026-06-01 10:00",
+      "dueTime": "2026-06-01 17:00",
+      "priority": "中",
+      "status": "已完成",
+      "remark": "已和场地方确认最新尺寸，任务闭环。"
+    },
+    {
+      "content": "补齐返场物料清点名单",
+      "module": "物料统筹",
+      "owner": "孙涛",
+      "assistant": "临时工阿周",
+      "startTime": "2026-06-01 18:00",
+      "dueTime": "2026-06-02 08:20",
+      "priority": "紧急",
+      "status": "已逾期",
+      "remark": "返场清点缺 2 名临时工，需今天中午前确认补位。"
+    },
+    {
+      "content": "确认舞台灯光彩排顺序",
+      "module": "舞台执行",
+      "owner": "陈凯",
+      "assistant": "林霄",
+      "startTime": "2026-06-02 08:30",
+      "dueTime": "2026-06-02 09:30",
+      "priority": "紧急",
+      "status": "进行中",
+      "remark": "需要和彩排导演最终确认出场顺序与灯光 cue 点。"
+    },
+    {
+      "content": "核对主持人彩排话筒编号",
+      "module": "舞台执行",
+      "owner": "林霄",
+      "assistant": "陈凯",
+      "startTime": "2026-06-02 09:00",
+      "dueTime": "2026-06-02 10:10",
+      "priority": "高",
+      "status": "待确认",
+      "remark": "和音频老师确认备用话筒切换表。"
+    },
+    {
+      "content": "给临时工推送签到点位图",
+      "module": "签到接待",
+      "owner": "王晴",
+      "assistant": "临时工小李",
+      "startTime": "2026-06-02 09:10",
+      "dueTime": "2026-06-02 10:40",
+      "priority": "高",
+      "status": "进行中",
+      "remark": "通过小程序发送各签到点位图和集合时间。"
+    },
+    {
+      "content": "确认 16:00 嘉宾接送车辆补位",
+      "module": "嘉宾接送",
+      "owner": "刘颖",
+      "assistant": "",
+      "startTime": "2026-06-02 11:30",
+      "dueTime": "2026-06-02 16:00",
+      "priority": "高",
+      "status": "已确认",
+      "remark": "高峰时段车辆轮换压力大，需要增补一辆商务车。"
+    },
+    {
+      "content": "今天下午5点一起去3楼会议室开会",
+      "module": "舞台执行",
+      "owner": "赵总",
+      "assistant": "",
+      "startTime": "",
+      "dueTime": "2026-06-05 17:00",
+      "priority": "高",
+      "status": "待确认",
+      "remark": "项目总控会议。"
+    }
+  ],
+  "riskItems": [
+    {
+      "description": "嘉宾接送高峰在16:00-17:00，两辆商务车轮换间隔过密，存在司机轮换风险",
+      "module": "嘉宾接送",
+      "probability": "高",
+      "impact": "高",
+      "plan": "增补一辆备用商务车，并在下午前完成补位确认。",
+      "owner": "刘颖",
+      "dueDate": "2026-06-02 16:00",
+      "status": "跟进中"
+    },
+    {
+      "description": "返场物料清点缺2名临时工，可能影响撤场效率",
+      "module": "物料统筹",
+      "probability": "中",
+      "impact": "高",
+      "plan": "今天中午前确认补位临时工，或从签到组临时调配。",
+      "owner": "孙涛",
+      "dueDate": "2026-06-02 12:00",
+      "status": "待确认"
+    },
+    {
+      "description": "舞台彩排时间紧，灯光音频与主持人彩排可能冲突",
+      "module": "舞台执行",
+      "probability": "中",
+      "impact": "中",
+      "plan": "把灯光彩排和主持人彩排错开排期，预留缓冲时间。",
+      "owner": "陈凯",
+      "dueDate": "2026-06-02 10:00",
+      "status": "跟进中"
+    }
+  ],
+  "agentIntegration": {
+    "可接入 agent": "Hermes / 其他",
+    "接入方式": "webhook / API",
+    "读取范围": "项目信息、任务、成员、消息",
+    "写回范围": "任务创建、状态更新、日报写入",
+    "审核方式": "项目经理确认"
+  },
+  "intakeWorkbook": {
+    "fileName": "",
+    "sheetName": "填写说明"
+  }
+}

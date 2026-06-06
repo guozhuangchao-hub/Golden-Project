@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  EventSourceType,
+  EventStatus,
   NotificationChannel,
   NotificationStatus,
   NotificationType,
   TaskLogAction,
   TaskPriority,
   TaskStatus,
+  VisibilityScope,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -168,6 +171,57 @@ export class TasksService {
     return cleaned.length > 6 ? cleaned.slice(0, 80) : '确认现场新增任务并回传结果';
   }
 
+  private async recordTaskEvent(params: {
+    projectId: string;
+    taskId: string;
+    title: string;
+    description?: string | null;
+    moduleName?: string | null;
+    ownerName?: string | null;
+    priority?: TaskPriority;
+    dueTime?: Date | string | null;
+    systemUserId: string;
+    sourceChannel: string;
+    rawText?: string | null;
+    recipientMode?: string | null;
+  }) {
+    return this.prisma.event.create({
+      data: {
+        projectId: params.projectId,
+        eventType: 'task_publish',
+        title: params.title,
+        description: params.description || params.rawText || '后台发布任务已生成正式任务。',
+        status: EventStatus.confirmed,
+        confidence: 1,
+        sourceType: EventSourceType.manual,
+        sourceChannel: params.sourceChannel,
+        sourceSender: '任务发布',
+        sourceSenderRole: 'admin',
+        rawContent: params.rawText || params.description || params.title,
+        visibilityScope: VisibilityScope.admin,
+        aiResult: {
+          source: params.sourceChannel,
+          taskId: params.taskId,
+          recipientMode: params.recipientMode,
+        },
+        proposedChanges: {
+          task: {
+            id: params.taskId,
+            title: params.title,
+            description: params.description,
+            moduleName: params.moduleName,
+            ownerName: params.ownerName,
+            priority: params.priority,
+            dueTime: params.dueTime ? new Date(params.dueTime).toISOString() : undefined,
+          },
+        },
+        createdById: params.systemUserId,
+        confirmedById: params.systemUserId,
+        confirmedAt: new Date(),
+      },
+    });
+  }
+
   async translatePublish(projectIdentifier: string, dto: TranslateTaskDto) {
     const { project, recipients } = await this.resolveRecipients(projectIdentifier, dto);
     const text = dto.text.trim();
@@ -222,11 +276,16 @@ export class TasksService {
     const ownerMember = ownerMemberId
       ? await this.prisma.projectMember.findUnique({ where: { id: ownerMemberId } })
       : null;
+    const editedModule = !dto.moduleId && dto.moduleName
+      ? await this.prisma.projectModule.findFirst({
+          where: { projectId: project.id, name: dto.moduleName },
+        })
+      : null;
 
     const task = await this.prisma.task.create({
       data: {
         projectId: project.id,
-        moduleId: dto.moduleId || preview.moduleId,
+        moduleId: dto.moduleId || editedModule?.id || preview.moduleId,
         title: dto.title || preview.title,
         description: preview.description,
         priority: dto.priority || preview.priority,
@@ -278,6 +337,21 @@ export class TasksService {
       })),
     });
 
+    await this.recordTaskEvent({
+      projectId: project.id,
+      taskId: task.id,
+      title: task.title,
+      description: task.description,
+      moduleName: task.module?.name || preview.moduleName,
+      ownerName: task.owner?.name || preview.ownerName,
+      priority: task.priority,
+      dueTime: task.dueTime,
+      systemUserId: systemUser.id,
+      sourceChannel: 'dashboard_task_publish',
+      rawText: dto.text,
+      recipientMode: dto.recipientMode,
+    });
+
     return {
       task,
       preview,
@@ -286,23 +360,25 @@ export class TasksService {
   }
 
   async create(projectId: string, dto: CreateTaskDto) {
+    const project = await this.resolveProject(projectId);
+    const systemUser = await this.ensureSystemUser();
     const ownerMember = dto.ownerMemberId
       ? await this.prisma.projectMember.findUnique({
-          where: { id: dto.ownerMemberId },
+          where: { id: dto.ownerMemberId, projectId: project.id },
           include: { user: true },
         })
       : null;
 
     const assistantMember = dto.assistantMemberId
       ? await this.prisma.projectMember.findUnique({
-          where: { id: dto.assistantMemberId },
+          where: { id: dto.assistantMemberId, projectId: project.id },
           include: { user: true },
         })
       : null;
 
-    return this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
-        projectId,
+        projectId: project.id,
         moduleId: dto.moduleId,
         title: dto.title,
         description: dto.description,
@@ -313,23 +389,43 @@ export class TasksService {
         assistantMemberId: assistantMember?.id,
         startTime: dto.startTime ? new Date(dto.startTime) : undefined,
         dueTime: dto.dueTime ? new Date(dto.dueTime) : undefined,
-        createdById: 'SYSTEM_SEED_USER_ID',
+        createdById: systemUser.id,
         logs: {
           create: {
             action: TaskLogAction.CREATED,
+            operatorId: systemUser.id,
             content: 'Task created',
           },
         },
       },
       include: {
+        owner: true,
+        module: true,
         logs: true,
       },
     });
+
+    await this.recordTaskEvent({
+      projectId: project.id,
+      taskId: task.id,
+      title: task.title,
+      description: task.description,
+      moduleName: task.module?.name,
+      ownerName: task.owner?.name,
+      priority: task.priority,
+      dueTime: task.dueTime,
+      systemUserId: systemUser.id,
+      sourceChannel: 'task_create_api',
+      rawText: dto.description || dto.title,
+    });
+
+    return task;
   }
 
-  findAll(projectId: string) {
+  async findAll(projectId: string) {
+    const project = await this.resolveProject(projectId);
     return this.prisma.task.findMany({
-      where: { projectId },
+      where: { projectId: project.id },
       include: {
         owner: true,
         assistant: true,
