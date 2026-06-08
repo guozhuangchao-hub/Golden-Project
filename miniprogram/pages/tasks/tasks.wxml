@@ -1,0 +1,34 @@
+<view class="screen">
+  <view wx:if="{{error}}" class="panel">
+    <view class="muted">{{error}}</view>
+  </view>
+
+  <view wx:if="{{!tasks.length && !loading}}" class="empty-state">
+    当前没有分配到你的任务。
+  </view>
+
+  <view class="card-list">
+    <view class="task-card" wx:for="{{tasks}}" wx:key="id">
+      <view class="card-head">
+        <view class="card-title">{{item.title}}</view>
+        <view class="status-pill">{{item.status}}</view>
+      </view>
+      <view class="row">
+        <text class="priority-pill">{{item.priority}}</text>
+        <text class="tag">{{item.module ? item.module.name : '项目级任务'}}</text>
+      </view>
+      <view class="muted" wx:if="{{item.description}}">{{item.description}}</view>
+      <view class="row">
+        <text class="muted">截止 {{item.dueTimeLabel}}</text>
+      </view>
+      <view class="row" wx:if="{{item.updates && item.updates.length}}">
+        <text class="muted">最近反馈：{{item.updates[0].content}}</text>
+      </view>
+      <view class="btn-row" style="margin-top: 18rpx;">
+        <button class="primary-btn" size="mini" bindtap="handleConfirm" data-task-id="{{item.id}}">确认接收</button>
+        <button class="secondary-btn" size="mini" bindtap="handleProgress" data-task-id="{{item.id}}">更新进度</button>
+        <button class="danger-btn" size="mini" bindtap="handleHelp" data-task-id="{{item.id}}">AI 求助</button>
+      </view>
+    </view>
+  </view>
+</view>

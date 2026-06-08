@@ -1,0 +1,24 @@
+<view class="screen">
+  <view wx:if="{{error}}" class="panel">
+    <view class="muted">{{error}}</view>
+  </view>
+
+  <view wx:if="{{!reminders.length && !loading}}" class="empty-state">
+    当前没有提醒。
+  </view>
+
+  <view class="card-list">
+    <view class="reminder-card" wx:for="{{reminders}}" wx:key="id">
+      <view class="card-head">
+        <view class="card-title">{{item.title}}</view>
+        <view class="status-pill">{{item.status}}</view>
+      </view>
+      <view>{{item.content}}</view>
+      <view class="row" style="margin-top: 12rpx;">
+        <text class="tag" wx:if="{{item.task && item.task.module}}">{{item.task.module.name}}</text>
+        <text class="muted">{{item.createdAtLabel}}</text>
+      </view>
+      <button class="secondary-btn" size="mini" bindtap="handleRead" data-notification-id="{{item.id}}">标记已读</button>
+    </view>
+  </view>
+</view>

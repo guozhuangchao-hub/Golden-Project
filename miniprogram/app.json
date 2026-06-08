@@ -1,0 +1,41 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/tasks/tasks",
+    "pages/reminders/reminders",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "navigationBarTitleText": "Golden Project",
+    "navigationBarBackgroundColor": "#f7f1e8",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f3ede2",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#6f6658",
+    "selectedColor": "#0f766e",
+    "backgroundColor": "#fffaf2",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "总览"
+      },
+      {
+        "pagePath": "pages/tasks/tasks",
+        "text": "我的任务"
+      },
+      {
+        "pagePath": "pages/reminders/reminders",
+        "text": "提醒"
+      },
+      {
+        "pagePath": "pages/settings/settings",
+        "text": "设置"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

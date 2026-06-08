@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ChatAgentDto } from './dto/chat-agent.dto';
+import { ManagerWorkflowDto } from './dto/manager-workflow.dto';
+import { MemberWorkflowDto } from './dto/member-workflow.dto';
 import { UpsertAgentIntegrationDto } from './dto/upsert-agent-integration.dto';
 import { AgentsService } from './agents.service';
 
@@ -42,6 +44,22 @@ export class AgentsController {
     @Body() dto: ChatAgentDto,
   ) {
     return this.agentsService.chat(projectId, dto);
+  }
+
+  @Post('projects/:projectId/workflows/manager-brief')
+  managerBrief(
+    @Param('projectId') projectId: string,
+    @Body() dto: ManagerWorkflowDto,
+  ) {
+    return this.agentsService.runManagerBrief(projectId, dto);
+  }
+
+  @Post('projects/:projectId/workflows/member-brief')
+  memberBrief(
+    @Param('projectId') projectId: string,
+    @Body() dto: MemberWorkflowDto,
+  ) {
+    return this.agentsService.runMemberBrief(projectId, dto);
   }
 
   @Post('events/:eventId/ack')

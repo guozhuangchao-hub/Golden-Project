@@ -1,0 +1,53 @@
+<view class="screen">
+  <view class="hero">
+    <view class="hero-title">{{brief ? brief.project.name : 'Golden Project 执行端'}}</view>
+    <view class="hero-subtitle">
+      {{brief ? (brief.project.description || '围绕任务、提醒、联系人和 AI 求助的执行入口。') : '先在设置页填写 backendBaseUrl、memberId、projectCode。'}}
+    </view>
+  </view>
+
+  <view wx:if="{{error}}" class="panel">
+    <view class="panel-title">当前状态</view>
+    <view class="muted">{{error}}</view>
+  </view>
+
+  <view wx:if="{{brief}}" class="panel">
+    <view class="panel-title">项目简介</view>
+    <view class="row">
+      <text class="tag">状态 {{brief.project.status}}</text>
+      <text class="tag" wx:if="{{brief.project.location}}">{{brief.project.location}}</text>
+    </view>
+    <view class="muted">模块</view>
+    <view class="row">
+      <text class="tag" wx:for="{{brief.modules}}" wx:key="id">{{item.name}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{memberBrief}}" class="panel">
+    <view class="panel-title">我的 AI 简报</view>
+    <view style="white-space: pre-wrap; line-height: 1.8;">{{memberBrief}}</view>
+  </view>
+
+  <view wx:if="{{brief && brief.contacts && brief.contacts.length}}" class="panel">
+    <view class="panel-title">关键联系人</view>
+    <view class="card-list">
+      <view class="contact-card" wx:for="{{brief.contacts}}" wx:key="memberId">
+        <view class="card-head">
+          <view class="card-title">{{item.name}}</view>
+          <view class="status-pill">{{item.role}}</view>
+        </view>
+        <view class="muted">{{item.title || '未设置岗位'}}</view>
+        <view class="muted" wx:if="{{item.mobile}}">{{item.mobile}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">快捷入口</view>
+    <view class="btn-row">
+      <button class="primary-btn" size="mini" bindtap="goTasks">我的任务</button>
+      <button class="secondary-btn" size="mini" bindtap="goReminders">我的提醒</button>
+      <button class="secondary-btn" size="mini" bindtap="goSettings">更新配置</button>
+    </view>
+  </view>
+</view>

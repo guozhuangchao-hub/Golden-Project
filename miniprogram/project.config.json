@@ -1,0 +1,15 @@
+{
+  "appid": "touristappid",
+  "projectname": "GoldenProjectMini",
+  "compileType": "miniprogram",
+  "libVersion": "trial",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": false,
+    "enhance": true
+  },
+  "simulatorType": "wechat",
+  "srcMiniprogramRoot": "./"
+}

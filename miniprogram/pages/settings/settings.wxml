@@ -1,0 +1,32 @@
+<view class="screen">
+  <view class="panel">
+    <view class="panel-title">本地连接</view>
+
+    <view class="field">
+      <view class="field-label">后端地址</view>
+      <input class="field-input" value="{{backendBaseUrl}}" data-field="backendBaseUrl" bindinput="handleInput" placeholder="http://127.0.0.1:3000/api" />
+    </view>
+
+    <view class="field">
+      <view class="field-label">memberId</view>
+      <input class="field-input" value="{{memberId}}" data-field="memberId" bindinput="handleInput" placeholder="项目成员 ID" />
+    </view>
+
+    <view class="field">
+      <view class="field-label">projectCode</view>
+      <input class="field-input" value="{{projectCode}}" data-field="projectCode" bindinput="handleInput" placeholder="项目 code 或 id" />
+    </view>
+
+    <view class="btn-row">
+      <button class="primary-btn" bindtap="saveSettings">保存配置</button>
+      <button class="secondary-btn" bindtap="testConnection">测试连接</button>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">使用说明</view>
+    <view class="muted">1. 先启动当前 NestJS 后端。</view>
+    <view class="muted">2. 在微信开发者工具关闭域名校验，或保持当前项目内的 urlCheck=false。</view>
+    <view class="muted">3. 填写项目成员 memberId 和项目 code/id 后即可加载任务。</view>
+  </view>
+</view>

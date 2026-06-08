@@ -1,11 +1,13 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
+  EventSourceType,
   FeishuInboundMessageStatus,
   FeishuProposalStatus,
   Prisma,
   Project,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OpsSignalsService } from '../../ops-signals/ops-signals.service';
 import { UpsertFeishuSettingDto } from './dto/upsert-feishu-setting.dto';
 
 type FeishuEventPayload = Record<string, any>;
@@ -28,7 +30,10 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   private digestTimer?: NodeJS.Timeout;
   private tenantTokenCache: { token: string; expiresAt: number } | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly opsSignalsService: OpsSignalsService,
+  ) {}
 
   onModuleInit() {
     this.digestTimer = setInterval(() => {
@@ -360,6 +365,7 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   private async generateAndSendProposal(setting: {
     id: string;
     projectId: string;
+    groupChatId?: string | null;
     summaryHour: number;
     summaryMinute: number;
     lastDigestAt: Date | null;
@@ -381,9 +387,8 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
     const messages = await this.prisma.feishuMessage.findMany({
       where: {
         projectId: setting.projectId,
-        receivedAt: {
-          gte: windowStart,
-        },
+        status: FeishuInboundMessageStatus.NEW,
+        receivedAt: { gte: windowStart },
       },
       orderBy: { receivedAt: 'asc' },
     });
@@ -400,8 +405,32 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
       return { ok: true, skipped: true, reason: 'no_messages' };
     }
 
-    const tasks = this.extractProposalTasks(messages, setting);
-    const summary = this.buildProposalSummary(setting, messages, tasks);
+    const signalContext = {
+      projectId: setting.projectId,
+      sourceType: EventSourceType.feishu,
+      moduleNames: setting.project.modules.map((module) => module.name),
+      memberNames: (setting.project.members || []).map((member) => member.user.name),
+    };
+    const signals = this.opsSignalsService.extractSignals(
+      messages.map((message) => ({
+        sourceMessageId: message.messageId,
+        senderName: message.senderName,
+        sourceChannel: setting.groupChatId || 'feishu_group',
+        content: message.content || '',
+        receivedAt: message.receivedAt,
+      })),
+      signalContext,
+    );
+    await this.opsSignalsService.persistSignals(signalContext, signals);
+    const systemUser = await this.ensureSystemUser();
+    await this.opsSignalsService.createPendingEventsFromSignals({
+      projectId: setting.projectId,
+      sourceType: EventSourceType.feishu,
+      systemUserId: systemUser.id || setting.project.createdById,
+      signals,
+    });
+    const tasks = this.opsSignalsService.taskCandidatesFromSignals(signals) as FeishuProposalTask[];
+    const summary = this.buildProposalSummary(setting, messages, signals, tasks);
     const now = new Date();
 
     const proposal = await this.prisma.feishuTaskProposal.create({
@@ -458,15 +487,26 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
     return proposal;
   }
 
+  private async ensureSystemUser() {
+    return this.prisma.user.upsert({
+      where: { email: 'system-feishu-digest@golden.local' },
+      update: {},
+      create: {
+        name: '飞书消息整理器',
+        email: 'system-feishu-digest@golden.local',
+        remark: '用于飞书群消息整理和待确认事项生成',
+      },
+    });
+  }
+
   private buildProposalSummary(
     setting: {
       project: { name: string; modules: Array<{ name: string }> };
     },
     messages: Array<{ senderName: string | null; content: string | null; receivedAt: Date }>,
+    signals: ReturnType<OpsSignalsService['extractSignals']>,
     tasks: FeishuProposalTask[],
   ) {
-    const messageCount = messages.length;
-    const taskCount = tasks.length;
     const authors = Array.from(new Set(messages.map((item) => item.senderName).filter(Boolean)));
     const moduleCount = Array.from(
       new Set(tasks.map((item) => item.moduleName).filter(Boolean)),
@@ -475,146 +515,11 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
     const topItems = tasks.slice(0, 5).map((task) => `- ${task.title} · ${task.ownerName || '待指定负责人'}`);
 
     return [
-      `项目「${setting.project.name}」本次共收到 ${messageCount} 条群内沟通，整理出 ${taskCount} 个待确认事项，覆盖 ${moduleCount} 个模块。`,
+      this.opsSignalsService.buildSignalSummary(setting.project.name, messages.length, signals),
+      `任务候选覆盖 ${moduleCount} 个模块。`,
       authors.length ? `相关沟通人：${authors.join('、')}` : '当前消息未识别到明确沟通人。',
       tasks.length ? `待确认事项预览：\n${topItems.join('\n')}` : '当前未提取到明确待办，建议项目经理补充任务描述。',
     ].join('\n\n');
-  }
-
-  private extractProposalTasks(
-    messages: Array<{
-      messageId: string;
-      senderName: string | null;
-      content: string | null;
-      receivedAt: Date;
-    }>,
-    setting: {
-      project: {
-        modules: Array<{ id: string; name: string }>;
-        members?: Array<{
-          id: string;
-          userId: string;
-          role: string;
-          user: { id: string; name: string; feishuUserId: string | null };
-        }>;
-      };
-    },
-  ) {
-    const moduleNames = setting.project.modules.map((module) => module.name);
-    const memberNames = (setting.project.members || []).map((member) => member.user.name);
-
-    return messages.flatMap((message) => {
-      const lines = this.splitCandidateLines(message.content || '');
-      return lines
-        .map((line) => this.extractTaskCandidate(line, message.messageId, moduleNames, memberNames))
-        .filter((item): item is FeishuProposalTask => Boolean(item));
-    });
-  }
-
-  private extractTaskCandidate(
-    line: string,
-    messageId: string,
-    moduleNames: string[],
-    memberNames: string[],
-  ): FeishuProposalTask | null {
-    const cleaned = line.trim().replace(/^[\-\*\d.、\s]+/, '');
-    if (!cleaned) {
-      return null;
-    }
-
-    const normalized = cleaned.replace(/\s+/g, ' ');
-    const hasTaskKeyword =
-      /(任务|待办|确认|安排|协调|对接|处理|推进|补充|跟进|提醒|同步|核对|提交|发送)/.test(normalized);
-    if (!hasTaskKeyword) {
-      return null;
-    }
-
-    const moduleName = moduleNames.find((name) => normalized.includes(name)) || null;
-    const ownerName =
-      memberNames.find((name) => normalized.includes(name)) ||
-      this.matchExplicitName(normalized) ||
-      null;
-    const assistantName = this.matchAssistant(normalized, memberNames);
-    const dueTime = this.matchDueTime(normalized);
-    const priority = this.matchPriority(normalized);
-
-    const title = normalized.length > 60 ? `${normalized.slice(0, 57)}...` : normalized;
-
-    return {
-      title,
-      description: normalized,
-      moduleName,
-      ownerName,
-      assistantName,
-      priority,
-      dueTime,
-      sourceMessageId: messageId,
-      sourceMessageText: normalized,
-    };
-  }
-
-  private splitCandidateLines(content: string) {
-    const base = content.trim();
-    if (!base) {
-      return [];
-    }
-
-    return base
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
-  private matchExplicitName(text: string) {
-    const atMatch = text.match(/@([\u4e00-\u9fa5A-Za-z0-9_·-]{2,20})/);
-    return atMatch?.[1] || null;
-  }
-
-  private matchAssistant(text: string, memberNames: string[]) {
-    const helperKeywords = ['协助', '支援', '配合', '帮忙', '助手'];
-    if (!helperKeywords.some((keyword) => text.includes(keyword))) {
-      return null;
-    }
-
-    return memberNames.find((name) => text.includes(name)) || null;
-  }
-
-  private matchDueTime(text: string) {
-    const match =
-      text.match(/(\d{1,2})[:：](\d{2})/) ||
-      text.match(/(\d{1,2})点(?:([0-5]?\d)分?)?/) ||
-      text.match(/(今天|明天|后天)/);
-
-    if (!match) {
-      return null;
-    }
-
-    if (match[1] === '今天' || match[1] === '明天' || match[1] === '后天') {
-      const offset = match[1] === '今天' ? 0 : match[1] === '明天' ? 1 : 2;
-      const base = new Date();
-      base.setDate(base.getDate() + offset);
-      base.setHours(18, 0, 0, 0);
-      return base.toISOString();
-    }
-
-    const hours = Number(match[1]);
-    const minutes = Number(match[2] || match[3] || 0);
-    const due = new Date();
-    due.setHours(hours, minutes, 0, 0);
-    return due.toISOString();
-  }
-
-  private matchPriority(text: string) {
-    if (/(紧急|马上|立即|尽快|今天必须|高优先)/.test(text)) {
-      return 'URGENT';
-    }
-    if (/(重要|优先|先处理)/.test(text)) {
-      return 'HIGH';
-    }
-    if (/(可后置|不急|低优先)/.test(text)) {
-      return 'LOW';
-    }
-    return 'MEDIUM';
   }
 
   private buildReviewCard(

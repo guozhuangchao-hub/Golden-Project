@@ -6,6 +6,8 @@ import { join } from 'path';
 import { promisify } from 'util';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ChatAgentDto } from './dto/chat-agent.dto';
+import { ManagerWorkflowDto } from './dto/manager-workflow.dto';
+import { MemberWorkflowDto } from './dto/member-workflow.dto';
 import { UpsertAgentIntegrationDto } from './dto/upsert-agent-integration.dto';
 
 type AgentWebhookPayload = Record<string, any>;
@@ -192,40 +194,7 @@ export class AgentsService {
       };
     }
 
-    let integration = await this.prisma.agentIntegrationSetting.findUnique({
-      where: {
-        projectId_provider: {
-          projectId: project.id,
-          provider,
-        },
-      },
-    });
-
-    if (!integration && provider === 'codex') {
-      integration = await this.prisma.agentIntegrationSetting.create({
-        data: {
-          projectId: project.id,
-          provider,
-          displayName: 'Codex 客服',
-          enabled: true,
-          capabilities: ['customer_service', 'project_qa'],
-          config: { mode: 'builtin' } as Prisma.InputJsonValue,
-        },
-      });
-    }
-
-    if (!integration && provider === 'openclaw') {
-      integration = await this.prisma.agentIntegrationSetting.create({
-        data: {
-          projectId: project.id,
-          provider,
-          displayName: 'OpenClaw 客服',
-          enabled: true,
-          capabilities: ['customer_service', 'project_qa'],
-          config: this.defaultOpenClawConfig() as Prisma.InputJsonValue,
-        },
-      });
-    }
+    const integration = await this.resolveOrCreateIntegration(project.id, provider);
 
     if (!integration?.enabled) {
       return {
@@ -281,11 +250,229 @@ export class AgentsService {
     };
   }
 
+  async runManagerBrief(projectIdentifier: string, dto: ManagerWorkflowDto) {
+    const provider = dto.provider || 'codex';
+    const project = await this.resolveProject(projectIdentifier);
+    if (!project) {
+      return { ok: false, reason: 'project_not_found' };
+    }
+
+    const integration = await this.resolveOrCreateIntegration(project.id, provider);
+    if (!integration?.enabled) {
+      return { ok: false, reason: 'integration_disabled' };
+    }
+
+    const [riskItems, latestRiskReport, memberLoad] = await Promise.all([
+      this.prisma.riskItem.findMany({
+        where: {
+          projectId: project.id,
+          status: { in: ['OPEN', 'ACKNOWLEDGED'] },
+        },
+        include: {
+          ownerMember: { include: { user: true } },
+        },
+        orderBy: [{ severity: 'desc' }, { identifiedAt: 'desc' }],
+        take: 8,
+      }),
+      this.prisma.aIReport.findFirst({
+        where: {
+          projectId: project.id,
+          type: 'RISK',
+        },
+        orderBy: { reportDate: 'desc' },
+      }),
+      this.summarizeMemberLoad(project.id),
+    ]);
+
+    const config = this.normalizeConfig(integration.config);
+    const sessionId = this.resolveWorkflowSessionId(project.id, dto.sessionId, 'manager-brief');
+    const prompt = this.buildManagerWorkflowPrompt(project, riskItems, latestRiskReport, memberLoad, dto.focus);
+    const result =
+      provider === 'codex' || config.mode === 'builtin'
+        ? {
+            sessionId,
+            raw: { mode: 'builtin', workflow: 'manager_brief' },
+            text: this.buildBuiltinManagerBrief(project, riskItems, latestRiskReport, memberLoad, dto.focus),
+          }
+        : await this.runOpenClawAgent({
+            projectId: project.id,
+            provider,
+            message: prompt,
+            sessionId,
+            config,
+            timeoutSeconds: dto.timeoutSeconds,
+          });
+
+    const record = await this.prisma.agentInboundEvent.create({
+      data: {
+        projectId: project.id,
+        integrationId: integration.id,
+        provider,
+        eventType: 'workflow.manager_brief',
+        payload: {
+          focus: dto.focus,
+          sessionId: result.sessionId,
+          reply: result.text,
+        } as Prisma.InputJsonValue,
+        status: AgentInboundEventStatus.PROCESSED,
+        processedAt: new Date(),
+      },
+    });
+
+    return {
+      ok: true,
+      workflow: 'manager_brief',
+      eventId: record.id,
+      provider,
+      sessionId: result.sessionId,
+      reply: result.text,
+      raw: result.raw,
+    };
+  }
+
+  async runMemberBrief(projectIdentifier: string, dto: MemberWorkflowDto) {
+    const provider = dto.provider || 'codex';
+    const project = await this.resolveProject(projectIdentifier);
+    if (!project) {
+      return { ok: false, reason: 'project_not_found' };
+    }
+
+    const member = await this.prisma.projectMember.findUnique({
+      where: { id: dto.memberId },
+      include: { user: true },
+    });
+    if (!member || member.projectId !== project.id) {
+      return { ok: false, reason: 'member_not_found' };
+    }
+
+    const integration = await this.resolveOrCreateIntegration(project.id, provider);
+    if (!integration?.enabled) {
+      return { ok: false, reason: 'integration_disabled' };
+    }
+
+    const [tasks, reminders, risks] = await Promise.all([
+      this.prisma.task.findMany({
+        where: {
+          projectId: project.id,
+          OR: [{ ownerMemberId: member.id }, { assistantMemberId: member.id }],
+          status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'IN_PROGRESS'] },
+        },
+        include: {
+          module: true,
+        },
+        orderBy: [{ dueTime: 'asc' }, { createdAt: 'desc' }],
+        take: 10,
+      }),
+      this.prisma.notification.findMany({
+        where: {
+          projectId: project.id,
+          receiverId: member.userId,
+        },
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+        take: 8,
+      }),
+      this.prisma.riskItem.findMany({
+        where: {
+          projectId: project.id,
+          ownerMemberId: member.id,
+          status: { in: ['OPEN', 'ACKNOWLEDGED'] },
+        },
+        orderBy: [{ severity: 'desc' }, { identifiedAt: 'desc' }],
+        take: 5,
+      }),
+    ]);
+
+    const config = this.normalizeConfig(integration.config);
+    const sessionId = this.resolveWorkflowSessionId(project.id, dto.sessionId, `member-${member.id}`);
+    const prompt = this.buildMemberWorkflowPrompt(project, member.user.name, tasks, reminders, risks, dto.focus);
+    const result =
+      provider === 'codex' || config.mode === 'builtin'
+        ? {
+            sessionId,
+            raw: { mode: 'builtin', workflow: 'member_brief' },
+            text: this.buildBuiltinMemberBrief(project.name, member.user.name, tasks, reminders, risks, dto.focus),
+          }
+        : await this.runOpenClawAgent({
+            projectId: project.id,
+            provider,
+            message: prompt,
+            sessionId,
+            config,
+            timeoutSeconds: dto.timeoutSeconds,
+          });
+
+    const record = await this.prisma.agentInboundEvent.create({
+      data: {
+        projectId: project.id,
+        integrationId: integration.id,
+        provider,
+        eventType: 'workflow.member_brief',
+        payload: {
+          memberId: member.id,
+          focus: dto.focus,
+          sessionId: result.sessionId,
+          reply: result.text,
+        } as Prisma.InputJsonValue,
+        status: AgentInboundEventStatus.PROCESSED,
+        processedAt: new Date(),
+      },
+    });
+
+    return {
+      ok: true,
+      workflow: 'member_brief',
+      eventId: record.id,
+      provider,
+      sessionId: result.sessionId,
+      reply: result.text,
+      raw: result.raw,
+    };
+  }
+
   private normalizeConfig(value: Prisma.JsonValue | null | undefined): AgentConfig {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return {};
     }
     return value as AgentConfig;
+  }
+
+  private async resolveOrCreateIntegration(projectId: string, provider: string) {
+    let integration = await this.prisma.agentIntegrationSetting.findUnique({
+      where: {
+        projectId_provider: {
+          projectId,
+          provider,
+        },
+      },
+    });
+
+    if (!integration && provider === 'codex') {
+      integration = await this.prisma.agentIntegrationSetting.create({
+        data: {
+          projectId,
+          provider,
+          displayName: 'Codex 客服',
+          enabled: true,
+          capabilities: ['customer_service', 'project_qa', 'manager_brief', 'member_brief'],
+          config: { mode: 'builtin' } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    if (!integration && provider === 'openclaw') {
+      integration = await this.prisma.agentIntegrationSetting.create({
+        data: {
+          projectId,
+          provider,
+          displayName: 'OpenClaw 客服',
+          enabled: true,
+          capabilities: ['customer_service', 'project_qa', 'manager_brief', 'member_brief'],
+          config: this.defaultOpenClawConfig() as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    return integration;
   }
 
   private buildCustomerServicePrompt(
@@ -335,6 +522,161 @@ export class AgentsService {
       '如果信息不足，请明确说需要补充什么，不要编造。',
       '如果用户请求下一步行动，请给出 1-3 条可执行建议。',
     ].join('\n');
+  }
+
+  private buildManagerWorkflowPrompt(
+    project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
+    riskItems: Array<any>,
+    latestRiskReport: any,
+    memberLoad: Array<{ userId: string; name: string; count: number }>,
+    focus?: string,
+  ) {
+    const riskLines = riskItems.map((risk) => {
+      const owner = risk.ownerMember?.user?.name || '待指定';
+      return `- [${risk.severity}] ${risk.title}｜负责人 ${owner}`;
+    });
+    const taskLines = (project.tasks || []).map((task) => {
+      return `- ${task.title}｜${task.status}｜${task.priority}｜负责人 ${task.owner?.name || '未指定'}`;
+    });
+    const eventLines = (project.events || []).map((event) => {
+      return `- ${event.title}｜${event.sourceType}/${event.sourceChannel || '未知来源'}`;
+    });
+    const loadLines = memberLoad.slice(0, 5).map((item) => `- ${item.name}：${item.count} 个活跃任务`);
+
+    return [
+      '你是 Golden Project 的项目经理 Agent。',
+      '请基于项目上下文输出今日经理简报，优先说风险、遗漏、谁需要催办、下一步动作。',
+      '请用中文，简洁，可执行。',
+      focus ? `本次关注点：${focus}` : '',
+      '',
+      `项目：${project.name} (${project.code || project.id})`,
+      latestRiskReport ? `最新风险报告：${latestRiskReport.summary || latestRiskReport.title}` : '暂无风险报告。',
+      '',
+      '风险项：',
+      riskLines.length ? riskLines.join('\n') : '暂无开放风险项。',
+      '',
+      '活跃任务：',
+      taskLines.length ? taskLines.join('\n') : '暂无活跃任务。',
+      '',
+      '待确认事项：',
+      eventLines.length ? eventLines.join('\n') : '暂无待确认事项。',
+      '',
+      '成员负载：',
+      loadLines.length ? loadLines.join('\n') : '暂无成员负载数据。',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private buildMemberWorkflowPrompt(
+    project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
+    memberName: string,
+    tasks: Array<any>,
+    reminders: Array<any>,
+    risks: Array<any>,
+    focus?: string,
+  ) {
+    const taskLines = tasks.map((task) => {
+      return `- ${task.title}｜${task.status}｜${task.priority}｜${task.module?.name || '项目级'}｜截止 ${task.dueTime ? task.dueTime.toISOString() : '未设置'}`;
+    });
+    const reminderLines = reminders.map((item) => `- ${item.title}｜${item.content}`);
+    const riskLines = risks.map((risk) => `- [${risk.severity}] ${risk.title}`);
+
+    return [
+      '你是 Golden Project 的执行助手 Agent。',
+      '请告诉执行人员今天先做什么、哪些任务快到期、有哪些提醒需要回复、需要找谁。',
+      '请用中文，简洁，可执行。',
+      focus ? `本次关注点：${focus}` : '',
+      '',
+      `项目：${project.name}`,
+      `成员：${memberName}`,
+      '',
+      '我的任务：',
+      taskLines.length ? taskLines.join('\n') : '当前没有分配任务。',
+      '',
+      '我的提醒：',
+      reminderLines.length ? reminderLines.join('\n') : '当前没有提醒。',
+      '',
+      '与我相关的风险：',
+      riskLines.length ? riskLines.join('\n') : '当前没有直接挂到你的风险项。',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private buildBuiltinManagerBrief(
+    project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
+    riskItems: Array<any>,
+    latestRiskReport: any,
+    memberLoad: Array<{ userId: string; name: string; count: number }>,
+    focus?: string,
+  ) {
+    const overdueTasks = (project.tasks || []).filter((task) => task.dueTime && task.dueTime < new Date());
+    const helpTasks = (project.tasks || []).filter((task: any) => task.needsHelp);
+    const pendingEvents = project.events || [];
+    const topRisks = riskItems.slice(0, 3);
+    const actions: string[] = [];
+
+    if (topRisks[0]) {
+      actions.push(`先处理最高风险「${topRisks[0].title}」`);
+    }
+    if (pendingEvents[0]) {
+      actions.push(`确认待确认事项「${pendingEvents[0].title}」是否转任务`);
+    }
+    if (memberLoad[0]) {
+      actions.push(`检查 ${memberLoad[0].name} 的任务负载，目前 ${memberLoad[0].count} 个活跃任务`);
+    }
+
+    return [
+      `项目经理简报：${project.name}`,
+      focus ? `关注点：${focus}` : null,
+      latestRiskReport?.summary ? `最新风险报告：${latestRiskReport.summary}` : null,
+      `开放风险：${riskItems.length} 项；逾期任务：${overdueTasks.length} 项；求助任务：${helpTasks.length} 项；待确认事项：${pendingEvents.length} 项。`,
+      topRisks.length
+        ? `当前优先风险：\n${topRisks
+            .map((risk, index) => `${index + 1}. [${risk.severity}] ${risk.title}`)
+            .join('\n')}`
+        : '当前没有开放风险项。',
+      actions.length ? `建议下一步：\n${actions.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '当前没有明显的优先动作。',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private buildBuiltinMemberBrief(
+    projectName: string,
+    memberName: string,
+    tasks: Array<any>,
+    reminders: Array<any>,
+    risks: Array<any>,
+    focus?: string,
+  ) {
+    const urgentTasks = tasks.filter((task) => task.priority === 'HIGH' || task.priority === 'URGENT');
+    const nextTask = tasks[0];
+    const actions: string[] = [];
+
+    if (nextTask) {
+      actions.push(`先推进「${nextTask.title}」`);
+    }
+    if (reminders[0]) {
+      actions.push(`处理提醒「${reminders[0].title}」`);
+    }
+    if (risks[0]) {
+      actions.push(`优先回复风险相关事项「${risks[0].title}」`);
+    }
+
+    return [
+      `${memberName} 的执行简报`,
+      `项目：${projectName}`,
+      focus ? `关注点：${focus}` : null,
+      `当前任务：${tasks.length} 项；高优先级：${urgentTasks.length} 项；提醒：${reminders.length} 条；关联风险：${risks.length} 项。`,
+      nextTask
+        ? `当前最先处理：${nextTask.title}（${nextTask.module?.name || '项目级'}，截止 ${nextTask.dueTime ? nextTask.dueTime.toISOString() : '未设置'}）`
+        : '当前没有分配中的任务。',
+      actions.length ? `建议下一步：\n${actions.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '当前没有需要优先处理的动作。',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private buildBuiltinCustomerReply(
@@ -435,6 +777,41 @@ export class AgentsService {
   private resolveSessionId(projectId: string, dto: ChatAgentDto) {
     const raw = dto.sessionId || dto.customerId || 'dashboard';
     return `golden-cs-${projectId}-${raw}`.replace(/[^a-zA-Z0-9_.:-]/g, '-').slice(0, 140);
+  }
+
+  private resolveWorkflowSessionId(projectId: string, rawSessionId: string | undefined, fallback: string) {
+    const raw = rawSessionId || fallback;
+    return `golden-wf-${projectId}-${raw}`.replace(/[^a-zA-Z0-9_.:-]/g, '-').slice(0, 140);
+  }
+
+  private async summarizeMemberLoad(projectId: string) {
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        projectId,
+        status: {
+          in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'IN_PROGRESS'],
+        },
+      },
+      include: {
+        owner: true,
+      },
+    });
+
+    const load = new Map<string, { userId: string; name: string; count: number }>();
+    tasks.forEach((task) => {
+      if (!task.ownerId || !task.owner) {
+        return;
+      }
+      const current = load.get(task.ownerId) ?? {
+        userId: task.ownerId,
+        name: task.owner.name,
+        count: 0,
+      };
+      current.count += 1;
+      load.set(task.ownerId, current);
+    });
+
+    return Array.from(load.values()).sort((a, b) => b.count - a.count);
   }
 
   private async runOpenClawAgent(params: {

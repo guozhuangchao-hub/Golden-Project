@@ -1,0 +1,166 @@
+<navigation-bar title="任务" color="#111111" background="#FFFFFF"></navigation-bar>
+
+<scroll-view class="page" scroll-y type="list">
+  <view class="header">
+    <view class="header-copy">
+      <text class="eyebrow">任务中心</text>
+      <view class="title">任务</view>
+    </view>
+    <button class="publish-button" bindtap="publishTask">发布</button>
+  </view>
+
+  <view class="config-card">
+    <view class="config-head" bindtap="toggleConfig">
+      <view>
+        <text class="config-title">执行身份</text>
+        <text class="config-copy">{{memberName || '未设置成员'}} · {{projectId}}</text>
+      </view>
+      <text class="config-toggle">{{configExpanded ? '收起' : '设置'}}</text>
+    </view>
+    <view class="config-body" wx:if="{{configExpanded}}">
+      <text class="field-label">memberId</text>
+      <input class="config-input" value="{{configDraftMemberId}}" bindinput="onMemberIdInput" placeholder="输入 projectMember.id" />
+      <text class="field-label">当前项目成员</text>
+      <scroll-view class="contact-list" scroll-x>
+        <button
+          class="recipient-chip {{item.memberId === configDraftMemberId ? 'selected' : ''}}"
+          wx:for="{{contacts}}"
+          wx:key="memberId"
+          data-member-id="{{item.memberId}}"
+          data-member-name="{{item.name}}"
+          bindtap="applyContactMember"
+        >
+          <text>{{item.name}}</text>
+          <text>{{item.role}}</text>
+        </button>
+      </scroll-view>
+      <view class="dialog-actions compact">
+        <button class="plain-button dialog-button" bindtap="toggleConfig">取消</button>
+        <button class="dark-button dialog-button" bindtap="saveRuntimeConfig">应用</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="alert-row">
+    <view class="red-light"></view>
+    <text>{{pendingCount}} 个任务需要确认，逾期风险会同步给项目经理。</text>
+  </view>
+
+  <view class="section-title">待确认</view>
+  <view class="task-list">
+    <view class="task-row confirm-task" wx:for="{{incomingTasks}}" wx:key="id">
+      <view class="task-main">
+        <text class="task-title">{{item.title}}</text>
+        <view class="meta-line">
+          <text>{{item.module}}</text>
+          <text>{{item.recipients || item.from}}</text>
+          <text>{{item.priority}}</text>
+        </view>
+        <text class="task-copy">截止 {{item.due}}</text>
+      </view>
+      <view class="actions">
+        <button class="plain-button" data-id="{{item.id}}" bindtap="rejectTask">拒绝</button>
+        <button class="dark-button" data-id="{{item.id}}" bindtap="acceptTask">接受</button>
+      </view>
+    </view>
+    <view class="empty-copy" wx:if="{{!incomingTasks.length}}">当前没有待确认任务</view>
+  </view>
+
+  <view class="section-title">我的任务</view>
+  <view class="task-list">
+    <view class="task-row vertical" wx:for="{{myTasks}}" wx:key="id">
+      <view class="task-top">
+        <view class="task-main">
+          <text class="task-title">{{item.title}}</text>
+          <view class="meta-line">
+            <text>{{item.module}}</text>
+            <text>{{item.owner}}</text>
+            <text>{{item.priority}}</text>
+          </view>
+        </view>
+        <text class="task-status">{{item.status}}</text>
+      </view>
+      <view class="progress-info">
+        <text>截止 {{item.due}}</text>
+        <text>{{item.progress}}%</text>
+      </view>
+      <slider value="{{item.progress}}" min="0" max="100" step="5" data-id="{{item.id}}" bindchange="updateProgress" activeColor="#111111" backgroundColor="#e5e5ea" block-size="18" />
+      <view class="actions single-action">
+        <button class="plain-button" data-id="{{item.id}}" bindtap="askTaskHelp">求助 AI</button>
+      </view>
+    </view>
+    <view class="empty-copy" wx:if="{{!myTasks.length}}">当前成员还没有分配到任务</view>
+  </view>
+</scroll-view>
+
+<view class="dialog-mask" wx:if="{{showPublishDialog}}" bindtap="closePublishDialog"></view>
+<view class="publish-dialog" wx:if="{{showPublishDialog}}">
+  <view class="dialog-head">
+    <view>
+      <text class="eyebrow">AI 发布任务</text>
+      <view class="dialog-title">{{publishStep === 'input' ? '描述你要发布的任务' : '确认 AI 转译结果'}}</view>
+    </view>
+    <button class="close-button" bindtap="closePublishDialog">×</button>
+  </view>
+
+  <block wx:if="{{publishStep === 'input'}}">
+    <view class="recipient-block">
+      <view class="field-label">选择对象</view>
+      <view class="mode-tabs">
+        <button class="mode-button {{recipientMode === 'single' ? 'active' : ''}}" data-mode="single" bindtap="selectRecipientMode">单人</button>
+        <button class="mode-button {{recipientMode === 'multi' ? 'active' : ''}}" data-mode="multi" bindtap="selectRecipientMode">多人</button>
+        <button class="mode-button {{recipientMode === 'all' ? 'active' : ''}}" data-mode="all" bindtap="selectRecipientMode">全体</button>
+      </view>
+      <view class="recipient-summary">将发送给：{{selectedRecipientText}}</view>
+      <scroll-view class="recipient-list" scroll-x wx:if="{{recipientMode !== 'all'}}">
+        <button
+          class="recipient-chip {{item.selected ? 'selected' : ''}}"
+          wx:for="{{recipientOptions}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="toggleRecipient"
+        >
+          <text>{{item.name}}</text>
+          <text>{{item.role}}</text>
+        </button>
+      </scroll-view>
+    </view>
+    <view class="field-label">任务描述</view>
+    <textarea class="publish-textarea" value="{{publishDraft}}" bindinput="onPublishInput" maxlength="160" placeholder="例如：请王晴今天 18:00 前确认签到胸卡缺口，如果少于 80 个就安排补打。" />
+    <text class="dialog-hint">AI 会结合发布对象，提取任务标题、模块、负责人、优先级和截止时间。</text>
+    <view class="dialog-actions">
+      <button class="plain-button dialog-button" bindtap="closePublishDialog">取消</button>
+      <button class="dark-button dialog-button" bindtap="translatePublishDraft">AI 转译</button>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="preview-card">
+      <text class="preview-label">任务标题</text>
+      <text class="preview-title">{{publishPreview.title}}</text>
+      <view class="preview-grid">
+        <view>
+          <text>模块</text>
+          <strong>{{publishPreview.module}}</strong>
+        </view>
+        <view>
+          <text>对象</text>
+          <strong>{{publishPreview.recipients}}</strong>
+        </view>
+        <view>
+          <text>优先级</text>
+          <strong>{{publishPreview.priority}}</strong>
+        </view>
+        <view>
+          <text>截止</text>
+          <strong>{{publishPreview.due}}</strong>
+        </view>
+      </view>
+      <text class="preview-note">原始描述：{{publishPreview.note}}</text>
+    </view>
+    <view class="dialog-actions">
+      <button class="plain-button dialog-button" bindtap="publishTask">重新填写</button>
+      <button class="dark-button dialog-button" bindtap="confirmPublishTask">确认发布</button>
+    </view>
+  </block>
+</view>

@@ -8,37 +8,27 @@ import {
 } from '@nestjs/common';
 import {
   EventSourceType,
-  EventStatus,
   Prisma,
-  TaskLogAction,
-  TaskPriority,
-  VisibilityScope,
   WechatDigestStatus,
   WechatInboundMessageStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { OpsSignalsService } from '../../ops-signals/ops-signals.service';
 import {
   ImportWechatMessageDto,
   ImportWechatMessagesDto,
 } from './dto/import-wechat-messages.dto';
 import { UpsertWechatSettingDto } from './dto/upsert-wechat-setting.dto';
 
-type ExtractedWechatTask = {
-  groupName: string;
-  senderName: string;
-  task: string;
-  title: string;
-  sourceMessageId: string;
-  sourceMessageText: string;
-  receivedAt: string;
-};
-
 @Injectable()
 export class WechatService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WechatService.name);
   private digestTimer?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly opsSignalsService: OpsSignalsService,
+  ) {}
 
   onModuleInit() {
     this.digestTimer = setInterval(() => {
@@ -241,10 +231,36 @@ export class WechatService implements OnModuleInit, OnModuleDestroy {
       return { ok: true, skipped: true, reason: 'no_messages' };
     }
 
-    const tasks = this.extractTasks(messages);
-    const createdTaskIds = tasks.length
-      ? await this.createTasksFromDigest(setting.project, tasks)
+    const systemUser = await this.ensureSystemUser();
+    const signals = this.opsSignalsService.extractSignals(
+      messages.map((message) => ({
+        sourceMessageId: message.externalMessageId,
+        sourceChannel: message.groupName,
+        senderName: message.senderName,
+        content: message.content,
+        receivedAt: message.receivedAt,
+      })),
+      {
+        projectId: setting.projectId,
+        sourceType: EventSourceType.wechat_import,
+      },
+    );
+    await this.opsSignalsService.persistSignals(
+      {
+        projectId: setting.projectId,
+        sourceType: EventSourceType.wechat_import,
+      },
+      signals,
+    );
+    const createdEventIds = signals.length
+      ? await this.opsSignalsService.createPendingEventsFromSignals({
+          projectId: setting.projectId,
+          sourceType: EventSourceType.wechat_import,
+          systemUserId: systemUser.id || setting.project.createdById,
+          signals,
+        })
       : [];
+    const taskCandidates = this.opsSignalsService.taskCandidatesFromSignals(signals);
 
     const digest = await this.prisma.wechatTaskDigest.create({
       data: {
@@ -253,7 +269,7 @@ export class WechatService implements OnModuleInit, OnModuleDestroy {
         windowStart,
         windowEnd,
         title: `${setting.project.name} 微信群任务整理`,
-        summary: this.buildDigestSummary(messages.length, tasks),
+        summary: this.buildDigestSummary(setting.project.name, messages.length, signals),
         sourceMessages: messages.map((message) => ({
           messageId: message.externalMessageId,
           groupName: message.groupName,
@@ -261,9 +277,9 @@ export class WechatService implements OnModuleInit, OnModuleDestroy {
           content: message.content,
           receivedAt: message.receivedAt,
         })) as Prisma.InputJsonValue,
-        extractedTasks: tasks as Prisma.InputJsonValue,
-        createdTaskIds: createdTaskIds as Prisma.InputJsonValue,
-        status: tasks.length ? WechatDigestStatus.APPLIED : WechatDigestStatus.SKIPPED,
+        extractedTasks: taskCandidates as Prisma.InputJsonValue,
+        createdTaskIds: createdEventIds as Prisma.InputJsonValue,
+        status: signals.length ? WechatDigestStatus.APPLIED : WechatDigestStatus.SKIPPED,
       },
     });
 
@@ -290,122 +306,6 @@ export class WechatService implements OnModuleInit, OnModuleDestroy {
     return digest;
   }
 
-  private extractTasks(
-    messages: Array<{
-      externalMessageId: string;
-      groupName: string;
-      senderName: string;
-      content: string;
-      receivedAt: Date;
-    }>,
-  ) {
-    const seen = new Set<string>();
-    const tasks: ExtractedWechatTask[] = [];
-
-    for (const message of messages) {
-      for (const line of this.splitCandidateLines(message.content)) {
-        const task = this.extractTaskText(line);
-        if (!task) {
-          continue;
-        }
-
-        const key = `${message.groupName}|${message.senderName}|${this.normalizeTaskKey(task)}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-
-        tasks.push({
-          groupName: message.groupName,
-          senderName: message.senderName,
-          task,
-          title: this.compactTitle(`${message.groupName} - ${message.senderName} - ${task}`),
-          sourceMessageId: message.externalMessageId,
-          sourceMessageText: line,
-          receivedAt: message.receivedAt.toISOString(),
-        });
-      }
-    }
-
-    return tasks;
-  }
-
-  private async createTasksFromDigest(
-    project: { id: string; name: string; createdById: string },
-    tasks: ExtractedWechatTask[],
-  ) {
-    const systemUser = await this.ensureSystemUser();
-    const createdTaskIds: string[] = [];
-
-    for (const item of tasks) {
-      const task = await this.prisma.task.create({
-        data: {
-          projectId: project.id,
-          title: item.title,
-          description: [
-            item.task,
-            '',
-            `来源：微信群「${item.groupName}」`,
-            `发送人：${item.senderName}`,
-            `原文：${item.sourceMessageText}`,
-          ].join('\n'),
-          priority: this.inferPriority(item.task),
-          status: 'PENDING_CONFIRMATION',
-          createdById: systemUser.id || project.createdById,
-          logs: {
-            create: {
-              action: TaskLogAction.CREATED,
-              operatorId: systemUser.id,
-              content: '由 Mac 微信群消息整理自动创建，等待确认',
-              extraData: {
-                source: 'wechat_import',
-                sourceMessageId: item.sourceMessageId,
-                groupName: item.groupName,
-                senderName: item.senderName,
-              },
-            },
-          },
-        },
-      });
-
-      await this.prisma.event.create({
-        data: {
-          projectId: project.id,
-          eventType: 'wechat_task',
-          title: item.title,
-          description: item.task,
-          status: EventStatus.confirmed,
-          confidence: 0.75,
-          sourceType: EventSourceType.wechat_import,
-          sourceChannel: item.groupName,
-          sourceSender: item.senderName,
-          sourceSenderRole: 'staff',
-          rawContent: item.sourceMessageText,
-          visibilityScope: VisibilityScope.admin,
-          aiResult: {
-            source: 'wechat_digest',
-            sourceMessageId: item.sourceMessageId,
-          },
-          proposedChanges: {
-            task: {
-              id: task.id,
-              title: item.title,
-              description: item.task,
-              priority: task.priority,
-            },
-          },
-          createdById: systemUser.id,
-          confirmedById: systemUser.id,
-          confirmedAt: new Date(),
-        },
-      });
-
-      createdTaskIds.push(task.id);
-    }
-
-    return createdTaskIds;
-  }
-
   private shouldAcceptMessage(message: ImportWechatMessageDto, allowedGroups: string[]) {
     if (!message.content?.trim()) {
       return false;
@@ -430,68 +330,21 @@ export class WechatService implements OnModuleInit, OnModuleDestroy {
       .filter(Boolean);
   }
 
-  private splitCandidateLines(content: string) {
-    return content
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
-  private extractTaskText(line: string) {
-    const cleaned = line
-      .replace(/^[\-\*\d.、\s]+/, '')
-      .replace(/^#?任务[:：\s]*/, '')
-      .trim();
-
-    if (!cleaned) {
-      return null;
+  private buildDigestSummary(
+    projectName: string,
+    messageCount: number,
+    signals: ReturnType<OpsSignalsService['extractSignals']>,
+  ) {
+    if (!signals.length) {
+      return `本次读取 ${messageCount} 条微信群消息，未识别到明确任务、风险或求助信号。`;
     }
 
-    const hasTaskSignal =
-      /^#?任务/.test(line) ||
-      /(任务|待办|确认|安排|协调|对接|处理|推进|补充|跟进|提醒|同步|核对|提交|发送|准备|落实|排查|更新)/.test(
-        cleaned,
-      );
-
-    if (!hasTaskSignal) {
-      return null;
-    }
-
-    return cleaned.length > 80 ? `${cleaned.slice(0, 77)}...` : cleaned;
-  }
-
-  private normalizeTaskKey(text: string) {
-    return text.replace(/\s+/g, '').replace(/[，。！？!?、:：]/g, '').slice(0, 50);
-  }
-
-  private compactTitle(text: string) {
-    return text.length > 180 ? `${text.slice(0, 177)}...` : text;
-  }
-
-  private inferPriority(text: string) {
-    if (/(紧急|马上|立即|尽快|今天必须|高优先|下班前|今晚)/.test(text)) {
-      return TaskPriority.HIGH;
-    }
-
-    if (/(不急|低优先|有空)/.test(text)) {
-      return TaskPriority.LOW;
-    }
-
-    return TaskPriority.MEDIUM;
-  }
-
-  private buildDigestSummary(messageCount: number, tasks: ExtractedWechatTask[]) {
-    if (!tasks.length) {
-      return `本次读取 ${messageCount} 条微信群消息，未识别到明确任务。`;
-    }
-
-    const preview = tasks
+    const preview = signals
       .slice(0, 8)
-      .map((task) => `- ${task.groupName} - ${task.senderName} - ${task.task}`)
+      .map((signal) => `- [${signal.signalType}] ${signal.summary}`)
       .join('\n');
 
-    return `本次读取 ${messageCount} 条微信群消息，整理出 ${tasks.length} 个待确认任务。\n${preview}`;
+    return `${this.opsSignalsService.buildSignalSummary(projectName, messageCount, signals)}\n${preview}`;
   }
 
   private async ensureSystemUser() {

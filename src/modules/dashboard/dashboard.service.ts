@@ -86,10 +86,68 @@ export class DashboardService {
       take: 8,
     });
 
+    const staleTasks = await this.prisma.task.findMany({
+      where: {
+        projectId: project.id,
+        status: {
+          in: ['CONFIRMED', 'IN_PROGRESS'],
+        },
+        OR: [
+          {
+            lastProgressAt: null,
+            updatedAt: { lt: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+          },
+          {
+            lastProgressAt: { lt: new Date(Date.now() - 12 * 60 * 60 * 1000) },
+          },
+        ],
+      },
+      include: {
+        owner: true,
+        module: true,
+      },
+      orderBy: [{ lastProgressAt: 'asc' }, { updatedAt: 'asc' }],
+      take: 8,
+    });
+
+    const helpTasks = await this.prisma.task.findMany({
+      where: {
+        projectId: project.id,
+        needsHelp: true,
+        status: {
+          in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'IN_PROGRESS'],
+        },
+      },
+      include: {
+        owner: true,
+        module: true,
+      },
+      orderBy: [{ blockedAt: 'asc' }, { updatedAt: 'asc' }],
+      take: 8,
+    });
+
     const todayReports = await this.prisma.aIReport.findMany({
       where: { projectId: project.id },
       orderBy: { reportDate: 'desc' },
       take: 3,
+    });
+
+    const riskItems = await this.prisma.riskItem.findMany({
+      where: {
+        projectId: project.id,
+        status: {
+          in: ['OPEN', 'ACKNOWLEDGED'],
+        },
+      },
+      include: {
+        ownerMember: {
+          include: {
+            user: true,
+          },
+        },
+      },
+      orderBy: [{ severity: 'desc' }, { identifiedAt: 'desc' }],
+      take: 20,
     });
 
     const feishuProposals = await this.prisma.feishuTaskProposal.findMany({
@@ -126,6 +184,9 @@ export class DashboardService {
       taskStats,
       memberStats,
       overdueTasks,
+      staleTasks,
+      helpTasks,
+      riskItems,
       todayReports,
       feishuProposals,
       events,

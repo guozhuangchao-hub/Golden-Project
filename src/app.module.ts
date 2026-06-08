@@ -9,12 +9,20 @@ import { FeishuModule } from './modules/integrations/feishu/feishu.module';
 import { AgentsModule } from './modules/integrations/agents/agents.module';
 import { EventsModule } from './modules/events/events.module';
 import { WechatModule } from './modules/integrations/wechat/wechat.module';
+import { MiniAppModule } from './modules/mini-app/mini-app.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { OpsSignalsModule } from './modules/ops-signals/ops-signals.module';
+import { RisksModule } from './modules/risks/risks.module';
+import { WorkerModule } from './modules/worker/worker.module';
 
 @Module({
   imports: [
     PrismaModule,
     ProjectsModule,
     TasksModule,
+    NotificationsModule,
+    OpsSignalsModule,
+    RisksModule,
     AiReportsModule,
     DashboardModule,
     UiModule,
@@ -22,6 +30,8 @@ import { WechatModule } from './modules/integrations/wechat/wechat.module';
     WechatModule,
     AgentsModule,
     EventsModule,
+    MiniAppModule,
+    WorkerModule,
   ],
 })
 export class AppModule {}

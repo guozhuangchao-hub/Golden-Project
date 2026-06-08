@@ -65,6 +65,13 @@ enum TaskLogAction {
   COMMENTED
 }
 
+enum TaskUpdateType {
+  PROGRESS
+  BLOCKER
+  HELP_REQUEST
+  COMMENT
+}
+
 enum NotificationType {
   TASK_CREATED
   TASK_UPDATED
@@ -117,6 +124,28 @@ enum WechatDigestStatus {
   CREATED
   APPLIED
   SKIPPED
+}
+
+enum MessageSignalType {
+  TASK_CANDIDATE
+  RISK_SIGNAL
+  PROGRESS_UPDATE
+  HELP_REQUEST
+  CONTACT_UPDATE
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
 }
 
 enum AgentInboundEventStatus {
@@ -211,6 +240,8 @@ model Project {
   agentIntegrations   AgentIntegrationSetting[]
   agentEvents         AgentInboundEvent[]
   events              Event[]
+  messageSignals      MessageSignal[]
+  riskItems           RiskItem[]
 
   @@index([status])
   @@index([startDate, endDate])
@@ -255,6 +286,8 @@ model ProjectMember {
   ownedTasks     Task[]          @relation("TaskOwnerMember")
   assistedTasks  Task[]          @relation("TaskAssistantMember")
   managedModules ProjectModule[] @relation("ModuleLeader")
+  taskUpdates    TaskUpdate[]
+  ownedRisks     RiskItem[]
 
   @@unique([projectId, userId])
   @@index([projectId, role, status])
@@ -279,6 +312,10 @@ model Task {
   confirmedAt       DateTime?      @map("confirmed_at")
   completedAt       DateTime?      @map("completed_at")
   cancelledAt       DateTime?      @map("cancelled_at")
+  lastProgressAt    DateTime?      @map("last_progress_at")
+  lastReminderAt    DateTime?      @map("last_reminder_at")
+  blockedAt         DateTime?      @map("blocked_at")
+  needsHelp         Boolean        @default(false) @map("needs_help")
   sortOrder         Int            @default(0) @map("sort_order")
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
@@ -291,6 +328,7 @@ model Task {
   createdBy         User           @relation("TaskCreator", fields: [createdById], references: [id])
   logs              TaskLog[]
   notifications     Notification[]
+  updates           TaskUpdate[]
 
   @@index([projectId, status, dueTime])
   @@index([moduleId, status])
@@ -317,6 +355,22 @@ model TaskLog {
   @@index([taskId, createdAt])
   @@index([operatorId])
   @@map("task_logs")
+}
+
+model TaskUpdate {
+  id              String         @id @default(cuid())
+  taskId           String         @map("task_id")
+  memberId         String?        @map("member_id")
+  type             TaskUpdateType
+  content          String
+  progressPercent  Int?           @map("progress_percent")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  task             Task           @relation(fields: [taskId], references: [id])
+  member           ProjectMember? @relation(fields: [memberId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@index([memberId, createdAt])
+  @@map("task_updates")
 }
 
 model Notification {
@@ -500,6 +554,52 @@ model WechatTaskDigest {
   @@index([projectId, windowEnd])
   @@index([status, createdAt])
   @@map("wechat_task_digests")
+}
+
+model MessageSignal {
+  id              String            @id @default(cuid())
+  projectId       String            @map("project_id")
+  sourceType      EventSourceType   @map("source_type")
+  sourceMessageId String            @map("source_message_id") @db.VarChar(160)
+  sourceChannel   String?           @map("source_channel") @db.VarChar(160)
+  senderName      String?           @map("sender_name") @db.VarChar(100)
+  signalType      MessageSignalType @map("signal_type")
+  summary         String            @db.VarChar(255)
+  confidence      Float             @default(0.5)
+  payload         Json?
+  processedAt     DateTime?         @map("processed_at")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  project         Project           @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([projectId, signalType, createdAt])
+  @@index([sourceType, sourceMessageId])
+  @@map("message_signals")
+}
+
+model RiskItem {
+  id            String       @id @default(cuid())
+  projectId     String       @map("project_id")
+  ownerMemberId String?      @map("owner_member_id")
+  title         String       @db.VarChar(200)
+  description   String?
+  severity      RiskSeverity @default(MEDIUM)
+  status        RiskStatus   @default(OPEN)
+  sourceKind    String       @map("source_kind") @db.VarChar(40)
+  sourceRefId   String?      @map("source_ref_id") @db.VarChar(160)
+  identifiedAt  DateTime     @default(now()) @map("identified_at")
+  resolvedAt    DateTime?    @map("resolved_at")
+  payload       Json?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  project       Project      @relation(fields: [projectId], references: [id])
+  ownerMember   ProjectMember? @relation(fields: [ownerMemberId], references: [id])
+
+  @@index([projectId, status, severity])
+  @@index([projectId, identifiedAt])
+  @@index([sourceKind, sourceRefId])
+  @@map("risk_items")
 }
 
 model AgentIntegrationSetting {

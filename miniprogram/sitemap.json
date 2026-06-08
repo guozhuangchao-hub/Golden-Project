@@ -1,0 +1,9 @@
+{
+  "desc": "Golden Project mini program sitemap",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}
