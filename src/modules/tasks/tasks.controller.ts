@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { CreateTaskUpdateDto } from './dto/create-task-update.dto';
 import { PublishTaskDto, TranslateTaskDto } from './dto/publish-task.dto';
+import { TranslateByImageDto } from './dto/translate-by-image.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
 import { TasksService } from './tasks.service';
 
@@ -18,6 +20,11 @@ export class TasksController {
     return this.tasksService.translatePublish(projectId, dto);
   }
 
+  @Post('translate-by-image')
+  translateByImage(@Param('projectId') projectId: string, @Body() dto: TranslateByImageDto) {
+    return this.tasksService.translateByImage(projectId, dto);
+  }
+
   @Post('publish')
   publish(@Param('projectId') projectId: string, @Body() dto: PublishTaskDto) {
     return this.tasksService.publish(projectId, dto);
@@ -31,6 +38,11 @@ export class TasksController {
   @Get(':taskId')
   findOne(@Param('taskId') taskId: string) {
     return this.tasksService.findOne(taskId);
+  }
+
+  @Get(':taskId/updates')
+  listUpdates(@Param('taskId') taskId: string) {
+    return this.tasksService.listUpdates(taskId);
   }
 
   @Post(':taskId/confirm')
@@ -63,5 +75,10 @@ export class TasksController {
     @Body() dto: UpdateTaskStatusDto,
   ) {
     return this.tasksService.changeStatus(taskId, dto, dto.toStatus);
+  }
+
+  @Post(':taskId/updates')
+  addUpdate(@Param('taskId') taskId: string, @Body() dto: CreateTaskUpdateDto) {
+    return this.tasksService.addUpdate(taskId, dto);
   }
 }
