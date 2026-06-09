@@ -1,125 +1,4 @@
-const demoData = {
-  project: {
-    id: 'demo-project-001',
-    code: 'GP-DEMO-2026-01',
-    name: '2026 上海新品发布会',
-    status: 'ACTIVE',
-    location: '上海西岸艺术中心',
-    startDate: '2026-06-08T09:00:00.000Z',
-    endDate: '2026-06-10T22:00:00.000Z',
-    modules: [
-      { id: 'm1', name: '舞台执行', sortOrder: 1 },
-      { id: 'm2', name: '签到接待', sortOrder: 2 },
-      { id: 'm3', name: '物料统筹', sortOrder: 3 },
-      { id: 'm4', name: '嘉宾接送', sortOrder: 4 },
-    ],
-  },
-  tasks: [
-    {
-      id: 't1',
-      title: '确认舞台灯光彩排顺序',
-      dueTime: '2026-06-02T09:30:00.000Z',
-      startTime: '2026-06-02T08:45:00.000Z',
-      status: 'IN_PROGRESS',
-      priority: 'URGENT',
-      owner: { name: '陈凯' },
-      assistant: { name: '林霄' },
-      module: { name: '舞台执行' },
-    },
-    {
-      id: 't2',
-      title: '核对主持人彩排话筒编号',
-      dueTime: '2026-06-02T10:10:00.000Z',
-      startTime: '2026-06-02T09:40:00.000Z',
-      status: 'PENDING_CONFIRMATION',
-      priority: 'HIGH',
-      owner: { name: '林霄' },
-      assistant: { name: '陈凯' },
-      module: { name: '舞台执行' },
-    },
-    {
-      id: 't3',
-      title: '给临时工推送签到点位图',
-      dueTime: '2026-06-02T10:40:00.000Z',
-      startTime: '2026-06-02T09:20:00.000Z',
-      status: 'IN_PROGRESS',
-      priority: 'HIGH',
-      owner: { name: '王晴' },
-      assistant: { name: '临时工小李' },
-      module: { name: '签到接待' },
-    },
-  ],
-  taskStats: [
-    { status: 'PENDING_CONFIRMATION', _count: { _all: 9 } },
-    { status: 'IN_PROGRESS', _count: { _all: 21 } },
-    { status: 'COMPLETED', _count: { _all: 36 } },
-    { status: 'OVERDUE', _count: { _all: 4 } },
-  ],
-  memberStats: [
-    { role: 'ADMIN', _count: { _all: 2 } },
-    { role: 'LEADER', _count: { _all: 5 } },
-    { role: 'EXECUTOR', _count: { _all: 16 } },
-    { role: 'TEMP', _count: { _all: 42 } },
-  ],
-  overdueTasks: [],
-  pendingEvents: [],
-  eventStats: [],
-  todayReports: [
-    {
-      id: 'r1',
-      title: 'AI 日报：执行资源已进入高峰',
-      summary: '舞台与签到模块推进正常，但物料返场清点存在人员分配不足，建议今晚前补两名临时工。',
-      reportDate: '2026-06-02T00:00:00.000Z',
-      type: 'DAILY',
-    },
-  ],
-  feishuProposals: [
-    {
-      id: 'fp1',
-      title: '2026 上海新品发布会 夜间任务整理',
-      summary:
-        '项目「2026 上海新品发布会」本次共收到 8 条群内沟通，整理出 3 个待确认事项，覆盖 2 个模块。',
-      status: 'APPLIED',
-      summaryDate: '2026-06-02T12:00:00.000Z',
-      managerComment: '项目经理已确认并同步到后台',
-      reviewedAt: '2026-06-02T12:20:00.000Z',
-      appliedAt: '2026-06-02T12:25:00.000Z',
-      reviewedBy: { name: '张总' },
-      setting: { groupChatId: 'oc_demo_group' },
-      proposedTasks: [
-        {
-          title: '确认舞台灯光彩排顺序',
-          moduleName: '舞台执行',
-          ownerName: '陈凯',
-          assistantName: '林霄',
-          priority: 'URGENT',
-          dueTime: '2026-06-02T09:30:00.000Z',
-        },
-        {
-          title: '给临时工推送签到点位图',
-          moduleName: '签到接待',
-          ownerName: '王晴',
-          assistantName: '临时工小李',
-          priority: 'HIGH',
-          dueTime: '2026-06-02T10:40:00.000Z',
-        },
-      ],
-    },
-    {
-      id: 'fp2',
-      title: '2026金砖国家新工业革命伙伴关系论坛 夜间任务整理',
-      summary: '项目正在收集群内沟通，还没有形成明确待确认事项。',
-      status: 'PENDING',
-      summaryDate: '2026-06-02T13:00:00.000Z',
-      managerComment: null,
-      reviewedAt: null,
-      appliedAt: null,
-      reviewedBy: null,
-      setting: { groupChatId: 'oc_2bb6e9f0785484a94f82bc6d3ef0eb83' },
-      proposedTasks: [],
-    },
-  ],
-};
+;
 
 const statusNameMap = {
   PENDING_CONFIRMATION: '待确认',
@@ -501,10 +380,10 @@ function getEditedPublishPreview() {
 }
 
 function renderTaskPublisher(data) {
-  const modeTabs = document.querySelector('#publishModeTabs');
+  const ''Tabs = document.querySelector('#publishModeTabs');
   const summary = document.querySelector('#publishRecipientSummary');
   const list = document.querySelector('#publishRecipientList');
-  if (!modeTabs || !summary || !list) {
+  if (!''Tabs || !summary || !list) {
     return;
   }
 
@@ -516,8 +395,8 @@ function renderTaskPublisher(data) {
     selectedPublishMemberIds.add(members[0].id);
   }
 
-  modeTabs.querySelectorAll('[data-publish-mode]').forEach((button) => {
-    button.classList.toggle('active', button.getAttribute('data-publish-mode') === publishRecipientMode);
+  ''Tabs.querySelectorAll('[data-publish-'']').forEach((button) => {
+    button.classList.toggle('active', button.getAttribute('data-publish-''') === publishRecipientMode);
   });
 
   const recipients = publishRecipientMode === 'all' ? members : getPublishRecipients();
@@ -559,7 +438,7 @@ function renderTaskPublisher(data) {
 }
 
 function getCustomerServiceProjectKey() {
-  return currentProjectCode || 'demo';
+  return currentProjectCode || '';
 }
 
 function getDefaultCustomerServiceMessages() {
@@ -652,7 +531,7 @@ function setCustomerServiceOpen(open) {
 }
 
 function buildAgentReply(question) {
-  const data = latestDashboardData || demoData;
+  const data = latestDashboardData;
   const tasks = sortTasks(data.tasks || data.overdueTasks || []);
   const eventStats = toCountMap(data.eventStats || [], 'status');
   const pendingCount = eventStats.pending_review || (data.pendingEvents || []).length || 0;
@@ -1049,7 +928,7 @@ async function persistModuleOrder() {
     .map((item) => item.dataset.moduleId)
     .filter(Boolean);
 
-  if (!currentProjectCode || !moduleIds.length || currentProjectCode === 'demo-project-001') {
+  if (!currentProjectCode || !moduleIds.length || currentProjectCode === 'none') {
     if (state) state.textContent = '演示数据不会保存排序。';
     return;
   }
@@ -1073,7 +952,7 @@ async function persistModuleOrder() {
   }
 }
 
-function render(data, mode = 'demo') {
+function render(data) {
   const taskMap = toCountMap(data.taskStats || [], 'status');
   const memberMap = toCountMap(data.memberStats || [], 'role');
   const project = data.project || {};
@@ -1102,7 +981,7 @@ function render(data, mode = 'demo') {
   document.querySelector('#projectName').textContent = project.name || '项目流程总览';
   document.querySelector('#projectMeta').textContent =
     `${stateTone[project.status] || '未设置状态'} · 项目编码 ${projectCode} · ${project.location || '待填写地点'} · ${formatShortDate(project.startDate)} - ${formatShortDate(project.endDate)}`;
-  document.querySelector('#heroMode').textContent = mode === 'live' ? 'LIVE DATA MODE' : 'DEMO MODE';
+  document.querySelector('#heroMode').textContent = 'LIVE DATA MODE';
 
   const metrics = [
     {
@@ -1360,14 +1239,20 @@ function render(data, mode = 'demo') {
     : '<div class="empty">当前项目还没有事件。后续飞书、微信、App 或手动录入的内容会进入这里统一展示。</div>';
 }
 
-async function fetchProjects() {
-  const response = await fetch('/api/projects');
-  if (!response.ok) {
-    throw new Error(`projects request failed: ${response.status}`);
+async async function fetchProjects() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch('/api/projects', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      throw new Error('request failed: ' + response.status);
+    }
+    const projects = await response.json();
+    return Array.isArray(projects) ? projects : [];
+  } catch(e) {
+    return [];
   }
-
-  const projects = await response.json();
-  return Array.isArray(projects) ? projects : [];
 }
 
 async function createProject(projectName) {
@@ -1397,7 +1282,13 @@ async function createProject(projectName) {
 
 async function loadDashboard(projectId) {
   if (!projectId) {
-    render(demoData, 'demo');
+    render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
     currentProjectCode = '';
     syncCustomerServiceMessages();
     stopEventPolling();
@@ -1440,8 +1331,20 @@ function openEventReviewModal(eventId) {
   const event = [
     ...(latestDashboardData?.events || []),
     ...(latestDashboardData?.pendingEvents || []),
-    ...(demoData.events || []),
-    ...(demoData.pendingEvents || []),
+    ...({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+}.events || []),
+    ...({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+}.pendingEvents || []),
   ].find((item) => item.id === eventId);
   if (!event) {
     throw new Error('未找到要确认的事件');
@@ -1473,7 +1376,7 @@ function closeEventReviewModal() {
 }
 
 function getOverviewData() {
-  return latestDashboardData || demoData;
+  return latestDashboardData;
 }
 
 function renderOverviewEvents(data) {
@@ -1826,7 +1729,6 @@ async function bootstrap() {
   const rawProjectIdentifier = params.get('projectCode') || params.get('projectId') || '';
   const select = document.querySelector('#projectSelect');
   const form = document.querySelector('#loadForm');
-  const useDemo = document.querySelector('#useDemo');
   const createProjectButton = document.querySelector('#createProject');
   const deleteProjectButton = document.querySelector('#deleteProject');
   const openIntakeWorkbookButton = document.querySelector('#openIntakeWorkbook');
@@ -1851,35 +1753,35 @@ async function bootstrap() {
   const customerServiceForm = document.querySelector('#customerServiceForm');
   const customerServiceInput = document.querySelector('#customerServiceInput');
 
-  syncProjectInputs(rawProjectIdentifier);
-  render(demoData, 'demo');
+  renderEmpty();
   syncCustomerServiceMessages();
-
-  try {
-    const projects = await fetchProjects();
-    const selectedProjectCode = resolveProjectCode(projects, rawProjectIdentifier);
-    renderProjectOptions(projects, selectedProjectCode);
-    syncProjectInputs(selectedProjectCode);
-  } catch {
-    renderProjectOptions([], '');
-  }
+  renderProjectOptions([], '');
+  status.textContent = '请先创建或选择项目，点击加载按钮。';
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const projectCode = select.value.trim();
-    status.textContent = projectCode ? '正在加载项目数据...' : '请选择项目后再加载。';
+    if (!projectCode) {
+      status.textContent = '请先选择项目。';
+      return;
+    }
+    status.textContent = '正在加载项目数据...';
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function(){ controller.abort(); status.textContent = '加载超时，请重试。'; }, 10000);
+      
       await loadDashboard(projectCode);
+      clearTimeout(timeoutId);
+      
       syncProjectInputs(projectCode);
-      status.textContent = projectCode
-        ? `已载入项目 ${select.selectedOptions[0]?.textContent || projectCode} 的 dashboard 数据。`
-        : '当前展示演示数据。';
-      const nextUrl = projectCode ? `?projectCode=${encodeURIComponent(projectCode)}` : window.location.pathname;
-      window.history.replaceState({}, '', nextUrl);
-    } catch {
-      render(demoData, 'demo');
-      status.textContent = '真实项目数据暂不可用，当前回退到演示数据。';
+      status.textContent = '已载入项目 ' + (select.selectedOptions[0]?.textContent || projectCode);
+      window.history.replaceState({}, '', '?projectCode=' + encodeURIComponent(projectCode));
+    } catch(e) {
+      if (status.textContent !== '加载超时，请重试。') {
+        status.textContent = '加载失败: ' + (e.message || '未知错误');
+      }
+      renderEmpty();
     }
   });
 
@@ -1922,9 +1824,14 @@ async function bootstrap() {
     }
   });
 
-  useDemo.addEventListener('click', () => {
     syncProjectInputs('');
-    render(demoData, 'demo');
+    render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
     stopEventPolling();
     status.textContent = '已切回演示数据。';
     window.history.replaceState({}, '', window.location.pathname);
@@ -1943,12 +1850,12 @@ async function bootstrap() {
   });
 
   publishModeTabs?.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-publish-mode]');
+    const target = event.target.closest('[data-publish-'']');
     if (!target) {
       return;
     }
 
-    publishRecipientMode = target.getAttribute('data-publish-mode') || 'single';
+    publishRecipientMode = target.getAttribute('data-publish-''') || 'single';
     latestPublishPreview = null;
     renderPublishPreview(null);
 
@@ -1958,7 +1865,7 @@ async function bootstrap() {
       selectedPublishMemberIds = new Set(firstSelected ? [firstSelected] : members[0] ? [members[0].id] : []);
     }
 
-    renderTaskPublisher(latestDashboardData || demoData);
+    renderTaskPublisher(latestDashboardData);
     setTaskPublishStatus('发布对象已更新，请重新 AI 转译后再确认发布。');
   });
 
@@ -1983,7 +1890,7 @@ async function bootstrap() {
 
     latestPublishPreview = null;
     renderPublishPreview(null);
-    renderTaskPublisher(latestDashboardData || demoData);
+    renderTaskPublisher(latestDashboardData);
     setTaskPublishStatus('发布对象已更新，请重新 AI 转译后再确认发布。');
   });
 
@@ -2119,7 +2026,13 @@ async function bootstrap() {
       window.history.replaceState({}, '', `?projectCode=${encodeURIComponent(createdProjectCode)}`);
     } catch (error) {
       status.textContent = error?.message || '新增项目失败，请稍后再试。';
-      render(demoData, 'demo');
+      render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
     }
   });
 
@@ -2190,7 +2103,13 @@ async function bootstrap() {
         status.textContent = `已删除项目「${projectLabel}」，当前自动切换到 ${nextProjectCode}。`;
       } else {
         syncProjectInputs('');
-        render(demoData, 'demo');
+        render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
         window.history.replaceState({}, '', window.location.pathname);
         status.textContent = `已删除项目「${projectLabel}」，当前没有可用项目，已切回演示数据。`;
       }
@@ -2209,7 +2128,13 @@ async function bootstrap() {
       await loadDashboard(rawProjectIdentifier);
       status.textContent = `已载入项目 ${select.selectedOptions[0]?.textContent || rawProjectIdentifier} 的 dashboard 数据。`;
     } catch {
-      render(demoData, 'demo');
+      render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
       status.textContent = '自动加载失败，已展示演示数据。';
     }
   } else {
@@ -2218,7 +2143,13 @@ async function bootstrap() {
       const latestProjectCode = await loadLatestProjectDashboard();
       status.textContent = `已自动载入最新项目 ${latestProjectCode} 的 dashboard 数据。`;
     } catch {
-      render(demoData, 'demo');
+      render({
+  project: { modules: [], members: [] },
+  tasks: [],
+  events: [],
+  pendingEvents: [],
+  eventQueue: [],
+});
       status.textContent = '当前展示演示数据，可通过项目下拉切换到真实接口。';
     }
   }
