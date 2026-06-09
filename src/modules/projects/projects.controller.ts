@@ -104,4 +104,9 @@ export class ProjectsController {
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
     return this.projectsService.update(id, dto);
   }
+
+  @Post(':id/intake-sync')
+  intakeSync(@Param('id') id: string, @Body() dto: any) {
+    return this.projectsService.intakeSync(id, dto);
+  }
 }

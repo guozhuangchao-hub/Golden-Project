@@ -380,10 +380,10 @@ function getEditedPublishPreview() {
 }
 
 function renderTaskPublisher(data) {
-  const ''Tabs = document.querySelector('#publishModeTabs');
+  const publishModeTabs = document.querySelector('#publishModeTabs');
   const summary = document.querySelector('#publishRecipientSummary');
   const list = document.querySelector('#publishRecipientList');
-  if (!''Tabs || !summary || !list) {
+  if (!publishModeTabs || !summary || !list) {
     return;
   }
 
@@ -395,8 +395,8 @@ function renderTaskPublisher(data) {
     selectedPublishMemberIds.add(members[0].id);
   }
 
-  ''Tabs.querySelectorAll('[data-publish-'']').forEach((button) => {
-    button.classList.toggle('active', button.getAttribute('data-publish-''') === publishRecipientMode);
+  publishModeTabs.querySelectorAll('[data-publish-mode]').forEach((button) => {
+    button.classList.toggle('active', button.getAttribute('data-publish-mode') === publishRecipientMode);
   });
 
   const recipients = publishRecipientMode === 'all' ? members : getPublishRecipients();
@@ -1110,34 +1110,95 @@ function render(data) {
     })
     .join('');
 
-  document.querySelector('#taskStatus').innerHTML = [
-    ['pending_review', '待确认'],
-    ['confirmed', '已确认'],
-    ['in_progress', '执行中'],
-    ['completed', '已完成'],
-    ['rejected', '已驳回'],
-    ['cancelled', '已取消'],
-  ]
-    .map(
-      ([key, label]) => `
-      <article class="status-card ${key === 'rejected' ? 'alert' : ''}">
-        <span>${label}</span>
-        <strong>${key === 'pending_review' ? eventStats[key] || pendingEvents.length || 0 : eventStats[key] || 0}</strong>
-      </article>
-    `,
-    )
-    .join('');
+  document.querySelector('#taskStatus').innerHTML = (() => {
+    const allTasks = data.tasks || data.overdueTasks || [];
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  document.querySelector('#members').innerHTML = Object.entries(roleNameMap)
-    .map(
-      ([key, label]) => `
-      <article class="status-card">
-        <span>${label}</span>
-        <strong>${memberMap[key] || 0}</strong>
-      </article>
-    `,
-    )
-    .join('');
+    const pendingTasks = allTasks.filter((t) => t.status === 'PENDING_CONFIRMATION');
+    const inProgressTasks = allTasks.filter((t) => t.status === 'IN_PROGRESS');
+    const collaboratingTasks = allTasks.filter((t) => t.status === 'CONFIRMED');
+    const completedTasks = allTasks.filter((t) => t.status === 'COMPLETED');
+    const atRiskTasks = allTasks.filter((t) => t.status === 'OVERDUE');
+    const urgentTasks = allTasks.filter((t) => {
+      if (t.priority !== 'URGENT' && t.priority !== 'HIGH') return false;
+      const deadline = new Date(t.dueTime);
+      if (Number.isNaN(deadline.getTime())) return false;
+      return deadline >= now && deadline <= sevenDaysLater;
+    });
+
+    const columns = [
+      ['pending', '待确认', pendingTasks.length, ''],
+      ['in_progress', '进行中', inProgressTasks.length, ''],
+      ['collaborating', '协作中', collaboratingTasks.length, ''],
+      ['completed', '已完成', completedTasks.length, 'done'],
+      ['at_risk', '有风险', atRiskTasks.length, 'alert'],
+      ['urgent', '紧急任务', urgentTasks.length, 'alert'],
+    ];
+
+    return columns
+      .map(
+        ([key, label, count, extra]) => `
+        <article class="status-card ${extra}" data-task-kanban="${key}">
+          <span>${label}</span>
+          <strong>${count}</strong>
+        </article>
+      `,
+      )
+      .join('');
+  })();
+
+  document.querySelector('#members').innerHTML = (() => {
+    const members = data.project?.members || [];
+    // Distinguish intake-sourced (project personnel) vs wechat miniprogram (temporary)
+    // TEMP role members are from wechat miniprogram; others are from intake
+    const projectPersonnel = members.filter((m) => m.role !== 'TEMP');
+    const tempPersonnel = members.filter((m) => m.role === 'TEMP');
+
+    const renderPerson = (member) => {
+      const name = getMemberName(member);
+      const role = roleNameMap[member.role] || member.role || '成员';
+      const org = member.title || member.department || '--';
+      return `
+        <article class="overview-detail-item people" style="margin-bottom:0;">
+          <div class="overview-detail-avatar">${escapeHtml(getInitials(name))}</div>
+          <div>
+            <div class="overview-detail-item-head inline">
+              <h4>${escapeHtml(name)}</h4>
+              <span class="overview-detail-status">${escapeHtml(role)}</span>
+            </div>
+            <p style="margin:2px 0 0;font-size:12px;">${escapeHtml(org)}</p>
+          </div>
+        </article>
+      `;
+    };
+
+    const parts = [];
+    if (projectPersonnel.length) {
+      parts.push(`
+        <div style="grid-column:1/-1;">
+          <div style="font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-strong);margin:0 0 8px;">项目人员</div>
+          <div class="status-grid" style="grid-template-columns:1fr;">
+            ${projectPersonnel.map(renderPerson).join('')}
+          </div>
+        </div>
+      `);
+    }
+    if (tempPersonnel.length) {
+      parts.push(`
+        <div style="grid-column:1/-1;">
+          <div style="font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-strong);margin:12px 0 8px;">临时人员</div>
+          <div class="status-grid" style="grid-template-columns:1fr;">
+            ${tempPersonnel.map(renderPerson).join('')}
+          </div>
+        </div>
+      `);
+    }
+    if (!parts.length) {
+      return '<div class="empty" style="grid-column:1/-1;padding:20px;text-align:center;">暂无成员数据</div>';
+    }
+    return parts.join('');
+  })();
 
   renderProjectStructure(project, modules, orderedTasks);
 
@@ -1239,7 +1300,7 @@ function render(data) {
     : '<div class="empty">当前项目还没有事件。后续飞书、微信、App 或手动录入的内容会进入这里统一展示。</div>';
 }
 
-async async function fetchProjects() {
+async function fetchProjects() {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -1724,6 +1785,44 @@ async function loadLatestProjectDashboard() {
   return latestProjectCode;
 }
 
+function renderEmpty() {
+  var el;
+  el = document.querySelector('#heroMode'); if(el) el.textContent = 'WAITING';
+  el = document.querySelector('#projectName'); if(el) el.textContent = '项目流程总览';
+  el = document.querySelector('#projectMeta'); if(el) el.textContent = '请创建或选择一个项目后点击加载。';
+  el = document.querySelector('#heroMetrics'); if(el) el.innerHTML = '<div class="empty" style="text-align:center;padding:20px;color:#6b756b;">暂无项目数据</div>';
+  el = document.querySelector('#flowSummary'); if(el) el.innerHTML = '';
+  el = document.querySelector('#focusStrip'); if(el) el.innerHTML = '';
+  el = document.querySelector('#roadmap'); if(el) el.innerHTML = '';
+  el = document.querySelector('#taskStatus'); if(el) el.innerHTML = '<div class="empty" style="padding:20px;text-align:center;">请加载项目</div>';
+  // Render structure tree from loaded data
+  el = document.querySelector('#structureTree'); if(el) {
+    var p = latestDashboardData ? (latestDashboardData.project || {}) : {};
+    var mods = p.modules || [];
+    // Fallback: load from gp-agent analysis data
+    if (!mods.length && currentProjectCode) {
+      fetch('/agent/structure/' + encodeURIComponent(currentProjectCode)).then(function(r){ return r.json(); }).then(function(d){
+        var data = d.data || d;
+        if (data && data.nodes && data.nodes.length) {
+          el.innerHTML = '<div class="structure-tree">' + data.nodes.map(function(m, i) {
+            return '<div class="tree-module"><div class="tree-index">' + (i+1) + '</div><div class="tree-content"><strong>' + (m.title || '模块') + '</strong><span class="tree-leader">' + (m.leader || '待指定') + '</span></div></div>';
+          }).join('') + '</div>';
+        }
+      }).catch(function(){});
+    }
+    if (mods.length) {
+      el.innerHTML = '<div class="structure-tree">' + mods.map(function(m, i) {
+        var leaderName = (m.leaderMember && (m.leaderMember.user ? m.leaderMember.user.name : m.leaderMember.name)) || '待指定';
+        return '<div class="tree-module"><div class="tree-index">' + (i+1) + '</div><div class="tree-content"><strong>' + m.name + '</strong><span class="tree-leader">' + leaderName + '</span></div></div>';
+      }).join('') + '</div>';
+    } else {
+      el.innerHTML = '<div class="empty" style="padding:20px;text-align:center;">暂无模块数据，请通过信息录入添加</div>';
+    }
+  }
+  el = document.querySelector('#personnelStats'); if(el) el.innerHTML = '';
+  el = document.querySelector('#structureTree'); if(el) el.innerHTML = '';
+}
+
 async function bootstrap() {
   const params = new URLSearchParams(window.location.search);
   const rawProjectIdentifier = params.get('projectCode') || params.get('projectId') || '';
@@ -1792,6 +1891,11 @@ async function bootstrap() {
     }
 
     status.textContent = '正在切换项目...';
+  openIntakeWorkbookButton.addEventListener("click", function() {
+    var pc = select.value.trim();
+    if (!pc) { status.textContent = "请选择项目"; return; }
+    window.location.href = "/agent/intake/" + encodeURIComponent(pc);
+  });
     try {
       await loadDashboard(projectCode);
       syncProjectInputs(projectCode);
@@ -1824,18 +1928,6 @@ async function bootstrap() {
     }
   });
 
-    syncProjectInputs('');
-    render({
-  project: { modules: [], members: [] },
-  tasks: [],
-  events: [],
-  pendingEvents: [],
-  eventQueue: [],
-});
-    stopEventPolling();
-    status.textContent = '已切回演示数据。';
-    window.history.replaceState({}, '', window.location.pathname);
-  });
 
   openProjectStructureButton?.addEventListener('click', () => {
     const projectCode = select.value.trim() || currentProjectCode || getProjectCode(latestDashboardData?.project);
@@ -1850,12 +1942,12 @@ async function bootstrap() {
   });
 
   publishModeTabs?.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-publish-'']');
+    const target = event.target.closest('[data-publish-mode]');
     if (!target) {
       return;
     }
 
-    publishRecipientMode = target.getAttribute('data-publish-''') || 'single';
+    publishRecipientMode = target.getAttribute('data-publish-mode') || 'single';
     latestPublishPreview = null;
     renderPublishPreview(null);
 
@@ -2124,6 +2216,9 @@ async function bootstrap() {
 
   if (rawProjectIdentifier) {
     try {
+      const projects = await fetchProjects();
+      renderProjectOptions(projects, rawProjectIdentifier);
+      syncProjectInputs(rawProjectIdentifier);
       status.textContent = '正在自动加载项目数据...';
       await loadDashboard(rawProjectIdentifier);
       status.textContent = `已载入项目 ${select.selectedOptions[0]?.textContent || rawProjectIdentifier} 的 dashboard 数据。`;

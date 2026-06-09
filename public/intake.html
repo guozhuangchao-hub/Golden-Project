@@ -90,6 +90,7 @@ body{
 .file-status.uploaded{background:#e8f5e9;color:var(--success)}
 .file-status.analyzing{background:#fff3e0;color:var(--warn)}
 .file-status.error{background:#fce4ec;color:var(--danger)}
+.file-status.analyzed{background:#ede7f6;color:#5e35b1}
 .file-status.pending{background:#e3eaf5;color:#4a6fa5}
 .file-del{cursor:pointer;color:var(--danger);font-size:15px;opacity:0.5;transition:opacity .2s;background:none;border:none;padding:2px 4px}
 .file-del:hover{opacity:1}
@@ -202,6 +203,8 @@ body{
   font-size:12px;cursor:default;transition:box-shadow .2s
 }
 .kanban-item:hover{box-shadow:0 1px 4px rgba(28,34,31,0.08)}
+.kanban-item.dragging{opacity:0.4}
+.kanban-col.drag-over{border-color:var(--terracotta);background:rgba(191,90,54,0.05)}
 .kanban-item .kb-title{font-weight:500;margin-bottom:4px}
 .kanban-item .kb-meta{font-size:11px;color:var(--text-light)}
 .kanban-item .kb-meta span{margin-right:8px}
@@ -473,6 +476,7 @@ body{
   <div class="tab-content" id="tab-1">
     <div class="section-title">项目模块与流程</div>
     <div class="card-grid" id="modulesContainer"></div>
+    <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewModule()" style="width:100%;padding:8px;font-size:13px">＋ 新增模块</button></div>
   </div>
 
   <!-- Tab 2: 活动日程 -->
@@ -483,11 +487,12 @@ body{
     <div class="table-wrap">
       <table class="data-table" id="activitiesTable">
         <thead><tr>
-          <th>活动名称</th><th>日期</th><th>时间</th><th>场地</th><th>所属模块</th><th>负责人</th><th>状态</th>
+          <th>活动名称</th><th>日期</th><th>时间</th><th>场地</th><th>所属模块</th><th>负责人</th><th>状态</th><th>操作</th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
+    <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewActivity()" style="width:100%;padding:8px;font-size:13px">＋ 新增活动</button></div>
   </div>
 
   <!-- Tab 3: 人员与单位 -->
@@ -500,21 +505,23 @@ body{
       <div class="table-wrap">
         <table class="data-table" id="contactsTable">
           <thead><tr>
-            <th>单位</th><th>角色</th><th>姓名</th><th>手机</th><th>飞书ID</th><th>事由</th><th>重要程度</th>
+            <th>单位</th><th>角色</th><th>姓名</th><th>手机</th><th>飞书ID</th><th>事由</th><th>重要程度</th><th>操作</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewContact()" style="width:100%;padding:8px;font-size:13px">＋ 新增联系人</button></div>
     </div>
     <div class="sub-tab-content" id="subtab-1">
       <div class="table-wrap">
         <table class="data-table" id="vendorsTable">
           <thead><tr>
-            <th>供应商</th><th>服务内容</th><th>联系人</th><th>电话</th><th>合同状态</th><th>负责人</th>
+            <th>供应商</th><th>服务内容</th><th>联系人</th><th>电话</th><th>合同状态</th><th>负责人</th><th>操作</th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewVendor()" style="width:100%;padding:8px;font-size:13px">＋ 新增供应商</button></div>
     </div>
   </div>
 
@@ -524,17 +531,19 @@ body{
     <div class="table-wrap">
       <table class="data-table" id="venuesTable">
         <thead><tr>
-          <th>场地名称</th><th>用途</th><th>关联活动</th><th>归属单位</th><th>对接人</th><th>电话</th><th>状态</th>
+          <th>场地名称</th><th>用途</th><th>关联活动</th><th>归属单位</th><th>对接人</th><th>电话</th><th>状态</th><th>操作</th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
+    <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewVenue()" style="width:100%;padding:8px;font-size:13px">＋ 新增场地</button></div>
   </div>
 
   <!-- Tab 5: 任务清单 -->
   <div class="tab-content" id="tab-5">
     <div class="section-title">任务看板</div>
     <div class="kanban-row" id="kanbanContainer"></div>
+    <div style="margin-top:10px"><button class="btn btn-outline" onclick="toggleNewTask()" style="width:100%;padding:8px;font-size:13px">＋ 新增任务</button></div>
   </div>
 
   <!-- Tab 6: 风险事项 -->
@@ -598,13 +607,22 @@ const intakeData = {
   projectName: '', shortName: '', projectCode: '', projectType: '',
   startDate: '', endDate: '', description: '', organizer: '', executor: '',
   modules: [], activities: [], contacts: [], vendors: [], venues: [],
-  tasks: [], risks: [], analysis: {structure: '', risks: [], suggestions: []}
+  tasks: [], risks: [], analysis: {structure: '', risks: [], suggestions: []},
+  _files: [], _analyzed: false
 };
 
 // ===== STATE =====
 let currentTab = 0;
 let currentSubTab = 0;
 let uploadedFiles = [];
+// New-item mode flags
+let newModuleMode = false, newActivityMode = false;
+let newContactMode = false, newVendorMode = false;
+let newVenueMode = false, newTaskMode = false;
+let _dragTaskIdx = null;
+
+// ===== HELPERS =====
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // ===== RENDER FUNCTIONS =====
 
@@ -623,76 +641,157 @@ function populateForm(){
 
 function renderModules(){
   const c = document.getElementById('modulesContainer');
-  c.innerHTML = intakeData.modules.map((m,i) =>
-    `<div class="card">
-      <h4>${m.name} <span class="card-tag">模块${i+1}</span></h4>
-      <div class="card-meta"><strong>负责人：</strong>${m.leader}</div>
-      <p>${m.desc}</p>
-      <div class="card-actions">
-        <input class="form-input" style="font-size:11px;flex:1" value="${m.leader}" placeholder="负责人">
-        <button class="btn btn-outline" style="padding:4px 10px;font-size:11px" onclick="showToast('模块信息已更新','info')">更新</button>
-      </div>
+  let html = intakeData.modules.map((m,i) =>
+    `<div class="card" style="position:relative;padding-right:32px">
+      <button class="file-del" onclick="deleteModule(${i})" style="position:absolute;top:6px;right:8px;font-size:16px;opacity:0.6" title="删除模块">✕</button>
+      <h4>${escHtml(m.name)} <span class="card-tag">模块${i+1}</span></h4>
+      <div class="card-meta"><strong>负责人：</strong><input class="form-input" style="display:inline-block;width:auto;min-width:130px;padding:2px 8px;font-size:12px" value="${escHtml(m.leader)}" placeholder="输入负责人" oninput="intakeData.modules[${i}].leader=this.value"></div>
+      <p>${escHtml(m.desc)}</p>
     </div>`
   ).join('');
+  if(newModuleMode){
+    html += `<div class="card" style="border:2px dashed var(--terracotta)">
+      <div class="form-group"><label>模块名称</label><input class="form-input" id="newModuleName" placeholder="输入模块名称"></div>
+      <div class="form-group"><label>负责人</label><input class="form-input" id="newModuleLeader" placeholder="输入负责人"></div>
+      <div class="form-group"><label>模块描述</label><textarea class="form-textarea" id="newModuleDesc" placeholder="输入模块描述"></textarea></div>
+      <div class="card-actions"><button class="btn btn-primary" style="padding:4px 16px;font-size:12px" onclick="confirmNewModule()">确认</button>
+      <button class="btn btn-outline" style="padding:4px 16px;font-size:12px" onclick="cancelNewModule()">取消</button></div>
+    </div>`;
+  }
+  c.innerHTML = html;
 }
 
 function renderTimeline(){
   const c = document.getElementById('timelineContainer');
-  const sorted = [...intakeData.activities].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  const sorted = intakeData.activities.map((a,i) => ({...a, _oi:i})).sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
   c.innerHTML = sorted.map(a =>
     `<div class="timeline-item">
-      <div class="tl-date">${a.date} ${a.time}</div>
-      <div class="tl-title">${a.name}</div>
-      <div class="tl-detail">${a.venue} · ${a.leader}${a.assistant?' · 协助:'+a.assistant:''} <span class="status-badge ${a.status}">${a.status==='confirmed'?'已确认':'待确认'}</span></div>
+      <div class="tl-date">
+        <input type="date" class="form-input" style="display:inline-block;width:auto;padding:2px 6px;font-size:11px" value="${a.date}" oninput="intakeData.activities[${a._oi}].date=this.value">
+        <input class="form-input" style="display:inline-block;width:auto;padding:2px 6px;font-size:11px" value="${escHtml(a.time)}" placeholder="时间" oninput="intakeData.activities[${a._oi}].time=this.value">
+      </div>
+      <div class="tl-title"><input class="form-input" style="display:inline-block;width:auto;min-width:200px;padding:2px 6px;font-size:13px" value="${escHtml(a.name)}" oninput="intakeData.activities[${a._oi}].name=this.value"></div>
+      <div class="tl-detail">
+        <input class="form-input" style="display:inline-block;width:auto;padding:2px 6px;font-size:12px" value="${escHtml(a.venue)}" placeholder="场地" oninput="intakeData.activities[${a._oi}].venue=this.value">
+         ·
+        <input class="form-input" style="display:inline-block;width:auto;padding:2px 6px;font-size:12px" value="${escHtml(a.leader)}" placeholder="负责人" oninput="intakeData.activities[${a._oi}].leader=this.value">
+        ${a.assistant ? ' · <strong>协助：</strong><input class="form-input" style="display:inline-block;width:auto;padding:2px 6px;font-size:12px" value="'+escHtml(a.assistant)+'" placeholder="协助人" oninput="intakeData.activities['+a._oi+'].assistant=this.value">' : ''}
+        <span class="status-badge ${a.status}">${a.status==='confirmed'?'已确认':'待确认'}</span>
+      </div>
     </div>`
   ).join('');
 }
 
 function renderActivitiesTable(){
   const tbody = document.querySelector('#activitiesTable tbody');
-  tbody.innerHTML = intakeData.activities.map(a =>
+  tbody.innerHTML = intakeData.activities.map((a,i) =>
     `<tr>
-      <td>${a.name}</td><td>${a.date}</td><td>${a.time}</td>
-      <td>${a.venue}</td><td>${a.module}</td><td>${a.leader}</td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(a.name)}" oninput="intakeData.activities[${i}].name=this.value"></td>
+      <td><input type="date" class="form-input" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px" value="${a.date}" oninput="intakeData.activities[${i}].date=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(a.time)}" oninput="intakeData.activities[${i}].time=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(a.venue)}" oninput="intakeData.activities[${i}].venue=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(a.module)}" oninput="intakeData.activities[${i}].module=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(a.leader)}" oninput="intakeData.activities[${i}].leader=this.value"></td>
       <td><span class="status-badge ${a.status}">${a.status==='confirmed'?'已确认':'待确认'}</span></td>
+      <td><button class="file-del" onclick="deleteActivity(${i})" title="删除">✕</button></td>
     </tr>`
   ).join('');
+  if(newActivityMode){
+    tbody.innerHTML += `<tr style="background:#fff8e1">
+      <td><input class="form-input" id="newActName" placeholder="活动名称" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input type="date" class="form-input" id="newActDate" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newActTime" placeholder="时间" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newActVenue" placeholder="场地" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newActModule" placeholder="所属模块" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newActLeader" placeholder="负责人" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><span class="status-badge pending">待确认</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-primary" style="padding:2px 8px;font-size:11px" onclick="confirmNewActivity()">确认</button> <button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="cancelNewActivity()">取消</button></td>
+    </tr>`;
+  }
 }
 
 function renderContacts(){
   const tbody = document.querySelector('#contactsTable tbody');
   const levels = {核心:'核心',重要:'重要',一般:'一般'};
-  tbody.innerHTML = intakeData.contacts.map(c =>
+  tbody.innerHTML = intakeData.contacts.map((c,i) =>
     `<tr>
-      <td>${c.org}</td><td>${c.role}</td><td>${c.name}</td>
-      <td>${c.mobile}</td><td>${c.feishuId}</td><td>${c.matter}</td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(c.org)}" oninput="intakeData.contacts[${i}].org=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(c.role)}" oninput="intakeData.contacts[${i}].role=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(c.name)}" oninput="intakeData.contacts[${i}].name=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(c.mobile)}" oninput="intakeData.contacts[${i}].mobile=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(c.feishuId)}" oninput="intakeData.contacts[${i}].feishuId=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px" value="${escHtml(c.matter)}" oninput="intakeData.contacts[${i}].matter=this.value"></td>
       <td><span class="status-badge ${c.level==='核心'?'active':c.level==='重要'?'confirmed':'pending'}">${c.level}</span></td>
+      <td><button class="file-del" onclick="deleteContact(${i})" title="删除">✕</button></td>
     </tr>`
   ).join('');
+  if(newContactMode){
+    tbody.innerHTML += `<tr style="background:#fff8e1">
+      <td><input class="form-input" id="newContactOrg" placeholder="单位" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newContactRole" placeholder="角色" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newContactName" placeholder="姓名" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newContactMobile" placeholder="手机" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newContactFeishu" placeholder="飞书ID" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newContactMatter" placeholder="事由" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px"></td>
+      <td><select class="form-select" id="newContactLevel" style="padding:2px 6px;font-size:12px"><option>一般</option><option>重要</option><option>核心</option></select></td>
+      <td style="white-space:nowrap"><button class="btn btn-primary" style="padding:2px 8px;font-size:11px" onclick="confirmNewContact()">确认</button> <button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="cancelNewContact()">取消</button></td>
+    </tr>`;
+  }
 }
 
 function renderVendors(){
   const tbody = document.querySelector('#vendorsTable tbody');
   const statuses = {已签约:'confirmed',洽谈中:'pending',意向阶段:'pending'};
-  tbody.innerHTML = intakeData.vendors.map(v =>
+  tbody.innerHTML = intakeData.vendors.map((v,i) =>
     `<tr>
-      <td>${v.name}</td><td>${v.service}</td><td>${v.contact}</td>
-      <td>${v.phone}</td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.name)}" oninput="intakeData.vendors[${i}].name=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px" value="${escHtml(v.service)}" oninput="intakeData.vendors[${i}].service=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(v.contact)}" oninput="intakeData.vendors[${i}].contact=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.phone)}" oninput="intakeData.vendors[${i}].phone=this.value"></td>
       <td><span class="status-badge ${statuses[v.contractStatus]||'pending'}">${v.contractStatus}</span></td>
-      <td>${v.manager}</td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(v.manager)}" oninput="intakeData.vendors[${i}].manager=this.value"></td>
+      <td><button class="file-del" onclick="deleteVendor(${i})" title="删除">✕</button></td>
     </tr>`
   ).join('');
+  if(newVendorMode){
+    tbody.innerHTML += `<tr style="background:#fff8e1">
+      <td><input class="form-input" id="newVendorName" placeholder="供应商" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVendorService" placeholder="服务内容" style="width:100%;min-width:100px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVendorContact" placeholder="联系人" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVendorPhone" placeholder="电话" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><select class="form-select" id="newVendorStatus" style="padding:2px 6px;font-size:12px"><option>洽谈中</option><option>意向阶段</option><option>已签约</option></select></td>
+      <td><input class="form-input" id="newVendorManager" placeholder="负责人" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td style="white-space:nowrap"><button class="btn btn-primary" style="padding:2px 8px;font-size:11px" onclick="confirmNewVendor()">确认</button> <button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="cancelNewVendor()">取消</button></td>
+    </tr>`;
+  }
 }
 
 function renderVenues(){
   const tbody = document.querySelector('#venuesTable tbody');
-  tbody.innerHTML = intakeData.venues.map(v =>
+  tbody.innerHTML = intakeData.venues.map((v,i) =>
     `<tr>
-      <td>${v.name}</td><td>${v.purpose}</td><td>${v.activity}</td>
-      <td>${v.org}</td><td>${v.leader}</td><td>${v.phone}</td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.name)}" oninput="intakeData.venues[${i}].name=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.purpose)}" oninput="intakeData.venues[${i}].purpose=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.activity)}" oninput="intakeData.venues[${i}].activity=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.org)}" oninput="intakeData.venues[${i}].org=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px" value="${escHtml(v.leader)}" oninput="intakeData.venues[${i}].leader=this.value"></td>
+      <td><input class="form-input" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px" value="${escHtml(v.phone)}" oninput="intakeData.venues[${i}].phone=this.value"></td>
       <td><span class="status-badge ${v.status==='已确认'?'confirmed':'pending'}">${v.status}</span></td>
+      <td><button class="file-del" onclick="deleteVenue(${i})" title="删除">✕</button></td>
     </tr>`
   ).join('');
+  if(newVenueMode){
+    tbody.innerHTML += `<tr style="background:#fff8e1">
+      <td><input class="form-input" id="newVenueName" placeholder="场地名称" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVenuePurpose" placeholder="用途" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVenueActivity" placeholder="关联活动" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVenueOrg" placeholder="归属单位" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVenueLeader" placeholder="对接人" style="width:100%;min-width:60px;padding:2px 6px;font-size:12px"></td>
+      <td><input class="form-input" id="newVenuePhone" placeholder="电话" style="width:100%;min-width:80px;padding:2px 6px;font-size:12px"></td>
+      <td><select class="form-select" id="newVenueStatus" style="padding:2px 6px;font-size:12px"><option>待确认</option><option>已确认</option></select></td>
+      <td style="white-space:nowrap"><button class="btn btn-primary" style="padding:2px 8px;font-size:11px" onclick="confirmNewVenue()">确认</button> <button class="btn btn-outline" style="padding:2px 8px;font-size:11px" onclick="cancelNewVenue()">取消</button></td>
+    </tr>`;
+  }
 }
 
 function renderKanban(){
@@ -705,13 +804,16 @@ function renderKanban(){
   };
   const cols = ['pending','in_progress','collaborating','completed','at_risk'];
   const c = document.getElementById('kanbanContainer');
+  // Tag tasks with original index
+  const tagged = intakeData.tasks.map((t,i) => ({...t, _oi:i}));
   c.innerHTML = cols.map(key => {
-    const items = intakeData.tasks.filter(t => t.status === key);
+    const items = tagged.filter(t => t.status === key);
     const priorityMap = {高:'priority-high',中:'priority-medium',低:'priority-low'};
-    return `<div class="kanban-col">
+    return `<div class="kanban-col" ondragover="onDragOver(event)" ondrop="onDrop(event, '${key}')" ondragleave="onDragLeave(event)">
       <h5>${statusMap[key]} <span class="count">${items.length}</span></h5>
       ${items.map(t => `
-        <div class="kanban-item">
+        <div class="kanban-item" style="position:relative" draggable="true" ondragstart="onDragStart(event, ${t._oi})">
+          <button class="file-del" onclick="deleteTask(${t._oi})" style="position:absolute;top:4px;right:6px;font-size:14px;opacity:0.5" title="删除任务">✕</button>
           <div class="kb-title">${t.title}</div>
           <div class="kb-meta">
             <span>👤 ${t.owner}</span>
@@ -723,6 +825,26 @@ function renderKanban(){
       ).join('')}
     </div>`;
   }).join('');
+  if(newTaskMode){
+    c.innerHTML += `<div style="margin-top:12px;padding:12px;background:#fff8e1;border-radius:var(--radius);border:2px dashed var(--terracotta)">
+      <div class="form-row">
+        <div class="form-group"><label>任务名称</label><input class="form-input" id="newTaskTitle" placeholder="输入任务名称"></div>
+        <div class="form-group"><label>负责人</label><input class="form-input" id="newTaskOwner" placeholder="负责人"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>截止日期</label><input type="date" class="form-input" id="newTaskDeadline"></div>
+        <div class="form-group"><label>优先级</label><select class="form-select" id="newTaskPriority"><option>低</option><option selected>中</option><option>高</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>所属模块</label><input class="form-input" id="newTaskModule" placeholder="所属模块"></div>
+        <div class="form-group"><label>状态</label><select class="form-select" id="newTaskStatus"><option value="pending">待确认</option><option value="in_progress">进行中</option><option value="collaborating">协作中</option><option value="completed">已完成</option><option value="at_risk">有风险</option></select></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" style="padding:4px 16px;font-size:12px" onclick="confirmNewTask()">确认</button>
+        <button class="btn btn-outline" style="padding:4px 16px;font-size:12px" onclick="cancelNewTask()">取消</button>
+      </div>
+    </div>`;
+  }
 }
 
 function renderRisks(){
@@ -895,13 +1017,15 @@ function renderFileList(){
     const icons = {pdf:'📕',docx:'📘',xlsx:'📗',pptx:'📙',txt:'📄'};
     const ext = f.name.split('.').pop().toLowerCase();
     const icon = icons[ext] || '📄';
+    const statusLabel = f.status==='uploaded'?'已上传':f.status==='analyzing'?'分析中':f.status==='analyzed'?'已分析':f.status==='error'?'失败':'待处理';
+    const delBtn = '<button class="file-del" onclick="removeFile('+i+')" title="删除">✕</button>';
     return `<div class="file-item">
       <div class="file-info">
         <span class="file-icon">${icon}</span>
         <span class="file-name" title="${f.name}">${f.name}</span>
-        <span class="file-status ${f.status}">${f.status==='uploaded'?'已上传':f.status==='analyzing'?'分析中':f.status==='error'?'失败':'待处理'}</span>
+        <span class="file-status ${f.status}">${statusLabel}</span>
       </div>
-      <button class="file-del" onclick="removeFile(${i})" title="删除">✕</button>
+      ${delBtn}
     </div>`;
   }).join('');
 }
@@ -909,6 +1033,13 @@ function renderFileList(){
 function removeFile(idx){
   uploadedFiles.splice(idx, 1);
   renderFileList();
+  // Persist updated _files to backend
+  intakeData._files = uploadedFiles.map(function(f){ return {name:f.name, size:f.size, status:f.status}; });
+  fetch(API_BASE + '/intake/' + PROJECT_ID + '/data', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
+    body:JSON.stringify(intakeData)
+  }).catch(function(){});
 }
 
 // ===== ACTIONS (replaced by server-sync versions below) =====
@@ -921,8 +1052,188 @@ function showToast(msg, type){
   t._timer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// ===== INIT =====
-// ===== API CONFIG =====
+// ===== ADD / DELETE HANDLERS =====
+
+// --- Modules ---
+function toggleNewModule(){ newModuleMode = !newModuleMode; renderModules(); }
+function confirmNewModule(){
+  const name = document.getElementById('newModuleName')?.value?.trim();
+  if(!name){ showToast('请输入模块名称', 'error'); return; }
+  intakeData.modules.push({
+    name: name,
+    leader: document.getElementById('newModuleLeader')?.value?.trim() || '',
+    desc: document.getElementById('newModuleDesc')?.value?.trim() || ''
+  });
+  newModuleMode = false; renderModules(); renderRightPanel();
+  showToast('模块已添加', 'success');
+}
+function cancelNewModule(){ newModuleMode = false; renderModules(); }
+function deleteModule(i){
+  if(!confirm('确认删除此模块？')) return;
+  intakeData.modules.splice(i, 1);
+  renderModules(); renderRightPanel();
+  showToast('模块已删除', 'info');
+}
+
+// --- Activities ---
+function toggleNewActivity(){ newActivityMode = !newActivityMode; renderActivitiesTable(); renderTimeline(); }
+function confirmNewActivity(){
+  const name = document.getElementById('newActName')?.value?.trim();
+  if(!name){ showToast('请输入活动名称', 'error'); return; }
+  intakeData.activities.push({
+    name: name,
+    date: document.getElementById('newActDate')?.value || '',
+    time: document.getElementById('newActTime')?.value?.trim() || '',
+    venue: document.getElementById('newActVenue')?.value?.trim() || '',
+    module: document.getElementById('newActModule')?.value?.trim() || '',
+    leader: document.getElementById('newActLeader')?.value?.trim() || '',
+    status: 'pending'
+  });
+  newActivityMode = false; renderActivitiesTable(); renderTimeline(); renderRightPanel();
+  showToast('活动已添加', 'success');
+}
+function cancelNewActivity(){ newActivityMode = false; renderActivitiesTable(); renderTimeline(); }
+function deleteActivity(i){
+  if(!confirm('确认删除此活动？')) return;
+  intakeData.activities.splice(i, 1);
+  renderActivitiesTable(); renderTimeline(); renderRightPanel();
+  showToast('活动已删除', 'info');
+}
+
+// --- Contacts ---
+function toggleNewContact(){ newContactMode = !newContactMode; renderContacts(); }
+function confirmNewContact(){
+  const name = document.getElementById('newContactName')?.value?.trim();
+  if(!name){ showToast('请输入联系人姓名', 'error'); return; }
+  intakeData.contacts.push({
+    org: document.getElementById('newContactOrg')?.value?.trim() || '',
+    role: document.getElementById('newContactRole')?.value?.trim() || '',
+    name: name,
+    mobile: document.getElementById('newContactMobile')?.value?.trim() || '',
+    feishuId: document.getElementById('newContactFeishu')?.value?.trim() || '',
+    matter: document.getElementById('newContactMatter')?.value?.trim() || '',
+    level: document.getElementById('newContactLevel')?.value || '一般'
+  });
+  newContactMode = false; renderContacts(); renderRightPanel();
+  showToast('联系人已添加', 'success');
+}
+function cancelNewContact(){ newContactMode = false; renderContacts(); }
+function deleteContact(i){
+  if(!confirm('确认删除此联系人？')) return;
+  intakeData.contacts.splice(i, 1);
+  renderContacts(); renderRightPanel();
+  showToast('联系人已删除', 'info');
+}
+
+// --- Vendors ---
+function toggleNewVendor(){ newVendorMode = !newVendorMode; renderVendors(); }
+function confirmNewVendor(){
+  const name = document.getElementById('newVendorName')?.value?.trim();
+  if(!name){ showToast('请输入供应商名称', 'error'); return; }
+  intakeData.vendors.push({
+    name: name,
+    service: document.getElementById('newVendorService')?.value?.trim() || '',
+    contact: document.getElementById('newVendorContact')?.value?.trim() || '',
+    phone: document.getElementById('newVendorPhone')?.value?.trim() || '',
+    contractStatus: document.getElementById('newVendorStatus')?.value || '洽谈中',
+    manager: document.getElementById('newVendorManager')?.value?.trim() || ''
+  });
+  newVendorMode = false; renderVendors(); renderRightPanel();
+  showToast('供应商已添加', 'success');
+}
+function cancelNewVendor(){ newVendorMode = false; renderVendors(); }
+function deleteVendor(i){
+  if(!confirm('确认删除此供应商？')) return;
+  intakeData.vendors.splice(i, 1);
+  renderVendors(); renderRightPanel();
+  showToast('供应商已删除', 'info');
+}
+
+// --- Venues ---
+function toggleNewVenue(){ newVenueMode = !newVenueMode; renderVenues(); }
+function confirmNewVenue(){
+  const name = document.getElementById('newVenueName')?.value?.trim();
+  if(!name){ showToast('请输入场地名称', 'error'); return; }
+  intakeData.venues.push({
+    name: name,
+    purpose: document.getElementById('newVenuePurpose')?.value?.trim() || '',
+    activity: document.getElementById('newVenueActivity')?.value?.trim() || '',
+    org: document.getElementById('newVenueOrg')?.value?.trim() || '',
+    leader: document.getElementById('newVenueLeader')?.value?.trim() || '',
+    phone: document.getElementById('newVenuePhone')?.value?.trim() || '',
+    status: document.getElementById('newVenueStatus')?.value || '待确认'
+  });
+  newVenueMode = false; renderVenues(); renderRightPanel();
+  showToast('场地已添加', 'success');
+}
+function cancelNewVenue(){ newVenueMode = false; renderVenues(); }
+function deleteVenue(i){
+  if(!confirm('确认删除此场地？')) return;
+  intakeData.venues.splice(i, 1);
+  renderVenues(); renderRightPanel();
+  showToast('场地已删除', 'info');
+}
+
+// --- Tasks ---
+function toggleNewTask(){ newTaskMode = !newTaskMode; renderKanban(); }
+function confirmNewTask(){
+  const title = document.getElementById('newTaskTitle')?.value?.trim();
+  if(!title){ showToast('请输入任务名称', 'error'); return; }
+  intakeData.tasks.push({
+    title: title,
+    owner: document.getElementById('newTaskOwner')?.value?.trim() || '',
+    deadline: document.getElementById('newTaskDeadline')?.value || '',
+    priority: document.getElementById('newTaskPriority')?.value || '中',
+    module: document.getElementById('newTaskModule')?.value?.trim() || '',
+    status: document.getElementById('newTaskStatus')?.value || 'pending'
+  });
+  newTaskMode = false; renderKanban(); renderRightPanel();
+  showToast('任务已添加', 'success');
+}
+function cancelNewTask(){ newTaskMode = false; renderKanban(); }
+function deleteTask(i){
+  if(!confirm('确认删除此任务？')) return;
+  intakeData.tasks.splice(i, 1);
+  renderKanban(); renderRightPanel();
+  showToast('任务已删除', 'info');
+}
+
+// ===== KANBAN DRAG & DROP =====
+function onDragStart(e, idx){
+  _dragTaskIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(idx));
+  // Add dragging class after a small delay (so the drag image captures the original appearance)
+  setTimeout(() => { e.target.classList.add('dragging'); }, 0);
+}
+function onDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+function onDrop(e, newStatus){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(_dragTaskIdx === null) return;
+  const task = intakeData.tasks[_dragTaskIdx];
+  if(!task) return;
+  if(task.status === newStatus) return; // same column, no-op
+  task.status = newStatus;
+  _dragTaskIdx = null;
+  renderKanban();
+  renderRightPanel();
+  showToast('任务状态已更新', 'success');
+}
+// Remove .dragging class from all items when drag ends
+document.addEventListener('dragend', function(){
+  document.querySelectorAll('.kanban-item.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.kanban-col.drag-over').forEach(el => el.classList.remove('drag-over'));
+  _dragTaskIdx = null;
+});
+
 const PROJECT_ID = '{{PROJECT_ID}}';
 const API_BASE = '{{API_BASE}}';
 function getToken(){ return localStorage.getItem('gp_token') || sessionStorage.getItem('gp_token'); }
@@ -949,7 +1260,17 @@ function startAnalyze(){
         btn.disabled = false; btn.textContent = '开始分析';
         if(d.error){ showToast('分析失败: '+d.error, 'error'); updateStatusBar(0); return; }
         Object.assign(intakeData, d.data);
+        // Mark all files as analyzed and persist state to backend
+        intakeData._files = uploadedFiles.map(function(f){ return {name:f.name, size:f.size, status:'analyzed'}; });
+        intakeData._analyzed = true;
+        uploadedFiles.forEach(function(f){ f.status = 'analyzed'; });
+        fetch(API_BASE + '/intake/' + PROJECT_ID + '/data', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
+          body:JSON.stringify(intakeData)
+        }).catch(function(){});
         rerenderAll();
+        renderFileList();
         updateStatusBar(2);
         showToast('分析完成！请核对并编辑内容', 'success');
       })
@@ -976,6 +1297,7 @@ function startAnalyze(){
 // ===== SAVE =====
 function saveDraft(){
   collectFormData();
+  intakeData._files = uploadedFiles.map(function(f){ return {name:f.name, size:f.size, status:f.status}; });
   fetch(API_BASE + '/intake/' + PROJECT_ID + '/data', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
@@ -1042,7 +1364,12 @@ function loadIntakeData(){
   .then(function(d){
     if(d && d.data){
       Object.assign(intakeData, d.data);
+      if(d.data._files && d.data._files.length){
+        uploadedFiles = d.data._files.map(function(f){ return {name:f.name, size:f.size, status:f.status}; });
+      }
+      if(d.data._analyzed) updateStatusBar(1);
       rerenderAll();
+      renderFileList();
     }
   })
   .catch(function(){});

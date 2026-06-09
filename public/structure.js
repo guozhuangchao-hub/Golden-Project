@@ -1,621 +1,671 @@
 /* ============================================================
-   GP Structure Mode — React Flow 可编辑画布
-   ============================================================
-   依赖 CDN: React 18, ReactDOM 18, ReactFlow 11, htm
+   GP Structure Mode — 层级结构树（纯 Vanilla JS）
    ============================================================ */
 
 // =============================================================
-// 1. 依赖与常量
+// 1. 数据管理
 // =============================================================
 
-const html = htm.bind(React.createElement);
+/**
+ * 树节点结构（扁平数组）
+ * {
+ *   id: string,
+ *   name: string,
+ *   parentId: string | null,
+ *   sortOrder: number,
+ *   data: { taskName, taskTime, taskPerson }
+ * }
+ */
+let treeData = [];
+let nodeIdCounter = 0;
+let currentProjectCode = '';
+let projectName = '';
+let dirty = false;
 
-const RF = window.ReactFlow || {};
-const RFReactFlow = RF.ReactFlow;
-const RFReactFlowProvider = RF.ReactFlowProvider || React.Fragment;
-const RFuseNodesState = RF.useNodesState;
-const RFuseEdgesState = RF.useEdgesState;
-const RFBackground = RF.Background;
-const RFControls = RF.Controls;
-const RFHandle = RF.Handle;
-const RFPosition = RF.Position;
-
-function getProjectCode(project) {
-  return project?.code || project?.projectCode || project?.id || '';
+function generateId() {
+  return 'n_' + (++nodeIdCounter) + '_' + Date.now().toString(36);
 }
 
-function formatShortDate(value) {
-  if (!value) return '--';
-  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(new Date(value));
+function getRootNodes() {
+  return treeData.filter((n) => n.parentId === null).sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function taskProgress(status) {
-  switch (status) {
-    case 'COMPLETED': return 100;
-    case 'IN_PROGRESS': return 66;
-    case 'CONFIRMED': return 42;
-    case 'PENDING_CONFIRMATION': return 18;
-    case 'OVERDUE': return 74;
-    default: return 24;
+function getChildren(parentId) {
+  return treeData.filter((n) => n.parentId === parentId).sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function getNode(id) {
+  return treeData.find((n) => n.id === id);
+}
+
+function getNodePath(id) {
+  const path = [];
+  let current = getNode(id);
+  while (current) {
+    path.unshift(current);
+    current = current.parentId ? getNode(current.parentId) : null;
   }
+  return path;
 }
 
-function sortTasks(tasks) {
-  return [...(tasks || [])].sort((a, b) => {
-    const aTime = new Date(a.dueTime || a.startTime || a.createdAt || 0).getTime();
-    const bTime = new Date(b.dueTime || b.startTime || b.createdAt || 0).getTime();
-    return aTime - bTime;
-  });
+/** Get all leaf nodes (nodes with no children) */
+function getLeafNodes() {
+  const parentIds = new Set(treeData.filter((n) => n.parentId !== null).map((n) => n.parentId));
+  return treeData.filter((n) => !parentIds.has(n.id));
 }
 
-function getModuleTaskList(tasks, module) {
-  return (tasks || []).filter(
-    (task) => task.module?.id === module.id || task.module?.name === module.name
-  );
+/** Build nested tree from flat data for rendering */
+function buildNestedTree() {
+  const roots = getRootNodes();
+  function buildNode(node) {
+    const children = getChildren(node.id);
+    return {
+      ...node,
+      children: children.map(buildNode),
+    };
+  }
+  return roots.map(buildNode);
 }
 
 // =============================================================
-// 2. 全局状态桥接（React ←→ Vanilla JS）
+// 2. 默认初始化
 // =============================================================
 
-window.__appState = {
-  nodes: [],
-  edges: [],
-  projectData: null,
-  currentProjectCode: '',
-  setNodes: null,
-  setEdges: null,
-};
+function initEmptyTree(projName) {
+  const rootId = generateId();
+  treeData = [
+    {
+      id: rootId,
+      name: projName || '项目名称',
+      parentId: null,
+      sortOrder: 0,
+      data: { taskName: '', taskTime: '', taskPerson: '' },
+    },
+  ];
+  dirty = false;
+  return rootId;
+}
 
-window.__updateNodeData = function (nodeId, dataPatch) {
-  const s = window.__appState;
-  if (!s.setNodes) return;
-  s.setNodes((prev) =>
-    prev.map((n) =>
-      n.id === nodeId
-        ? { ...n, data: { ...n.data, ...dataPatch, structureSource: 'manually_modified' } }
-        : n
-    )
-  );
-};
+// =============================================================
+// 3. 树操作
+// =============================================================
 
-window.__addNode = function (title, description, leader) {
-  const s = window.__appState;
-  if (!s.setNodes || !s.setEdges) return;
+function addNode(parentId) {
+  const parent = getNode(parentId);
+  if (!parent) return;
 
-  const newId = 'manual_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-  const rootNode = (s.nodes || []).find((n) => n.type === 'root');
-  const rootPos = rootNode ? rootNode.position : { x: 400, y: 50 };
-  const moduleNodes = (s.nodes || []).filter((n) => n.type === 'module');
-  const count = moduleNodes.length;
-  const col = count % 4;
-  const row = Math.floor(count / 4);
+  const children = getChildren(parentId);
+  const level = getNodeLevel(parentId) + 1;
+  // Max 3 levels deep (项目 → 一级 → 二级 → 三级)
+  if (level >= 4) {
+    showStatus('最多支持三级结构');
+    return;
+  }
 
   const newNode = {
-    id: newId,
-    type: 'module',
-    position: {
-      x: Math.max(50, rootPos.x - 140 + col * 280),
-      y: rootPos.y + 160 + row * 180,
-    },
-    data: {
-      title: title || '新模块',
-      description: description || '',
-      leader: leader || '',
-      members: [],
-      progress: 0,
-      taskCount: 0,
-      parentId: rootNode ? rootNode.id : null,
-      createdBy: 'manual',
-      structureSource: 'manually_modified',
-      index: count,
-    },
+    id: generateId(),
+    name: getDefaultName(level),
+    parentId: parentId,
+    sortOrder: children.length,
+    data: { taskName: '', taskTime: '', taskPerson: '' },
   };
-
-  const newEdge = {
-    id: 'edge_root_' + newId,
-    source: rootNode ? rootNode.id : 'root',
-    target: newId,
-    type: 'smoothstep',
-    animated: false,
-  };
-
-  s.setNodes((prev) => [...prev, newNode]);
-  s.setEdges((prev) => [...prev, newEdge]);
-};
-
-window.__deleteNode = function (nodeId) {
-  const s = window.__appState;
-  if (!s.setNodes || !s.setEdges) return;
-
-  const hasChildren = (s.nodes || []).some(
-    (n) => n.data && n.data.parentId === nodeId
-  );
-  if (hasChildren) {
-    alert('请先删除或移动子模块');
-    return false;
-  }
-
-  s.setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-  s.setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
-  return true;
-};
-
-// =============================================================
-// 3. 数据转换
-// =============================================================
-
-function convertDashboardToGraph(data) {
-  const project = data.project || {};
-  const modules = [...(project.modules || [])].sort(
-    (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-  );
-  const tasks = sortTasks(data.tasks || []);
-  const nodes = [];
-  const edges = [];
-
-  // Root node
-  const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
-  const overallProgress = tasks.length
-    ? Math.round((completedTasks / tasks.length) * 100)
-    : 0;
-
-  nodes.push({
-    id: 'root',
-    type: 'root',
-    position: { x: 400, y: 50 },
-    data: {
-      title: project.name || '项目根节点',
-      description: modules.length + ' 个模块 · ' + tasks.length + ' 个任务',
-      leader: '',
-      members: [],
-      progress: overallProgress,
-      taskCount: tasks.length,
-      parentId: null,
-      createdBy: 'ai',
-      structureSource: 'ai_generated',
-      index: -1,
-      projectId: getProjectCode(project),
-    },
-  });
-
-  // Module nodes
-  modules.forEach((module, index) => {
-    const moduleTasks = getModuleTaskList(tasks, module);
-    const moduleProgress = moduleTasks.length
-      ? Math.round(
-          moduleTasks.reduce((sum, t) => sum + taskProgress(t.status), 0) /
-            moduleTasks.length
-        )
-      : 0;
-    const leaderName = module.leaderMember?.user?.name || '';
-
-    const nodeId = 'module_' + (module.id || index);
-    const col = index % 4;
-    const row = Math.floor(index / 4);
-
-    nodes.push({
-      id: nodeId,
-      type: 'module',
-      position: { x: 280 + col * 280, y: 180 + row * 200 },
-      data: {
-        title: module.name || '未命名模块',
-        description: module.description || '',
-        leader: leaderName,
-        members: [],
-        progress: moduleProgress,
-        taskCount: moduleTasks.length,
-        parentId: 'root',
-        createdBy: 'ai',
-        structureSource: 'ai_generated',
-        index: index,
-        moduleId: module.id,
-      },
-    });
-
-    edges.push({
-      id: 'edge_root_' + nodeId,
-      source: 'root',
-      target: nodeId,
-      type: 'smoothstep',
-      animated: false,
-    });
-  });
-
-  return { nodes, edges, project };
+  treeData.push(newNode);
+  dirty = true;
+  renderAll();
 }
 
-function convertGraphToSavePayload(nodes, edges) {
+function deleteNode(id) {
+  const node = getNode(id);
+  if (!node) return;
+  // Cannot delete root
+  if (node.parentId === null) {
+    showStatus('不能删除项目根节点');
+    return;
+  }
+  // Recursively delete children
+  const descendants = getDescendantIds(id);
+  const idsToRemove = new Set([id, ...descendants]);
+  treeData = treeData.filter((n) => !idsToRemove.has(n.id));
+  dirty = true;
+  renderAll();
+}
+
+function getDescendantIds(id) {
+  const ids = [];
+  const children = getChildren(id);
+  for (const child of children) {
+    ids.push(child.id);
+    ids.push(...getDescendantIds(child.id));
+  }
+  return ids;
+}
+
+function getNodeLevel(id) {
+  let level = 0;
+  let current = getNode(id);
+  while (current && current.parentId !== null) {
+    level++;
+    current = getNode(current.parentId);
+  }
+  return level;
+}
+
+function getDefaultName(level) {
+  const labels = ['', '一级结构', '二级结构', '三级结构'];
+  const count = treeData.filter((n) => getNodeLevel(n.id) === level).length + 1;
+  return labels[level] + count;
+}
+
+// =============================================================
+// 3b. 拖拽排序 (HTML5 Drag & Drop)
+// =============================================================
+
+let dragSourceId = null;
+
+/** Check if `ancestorId` is a descendant of `nodeId` (cycle detection) */
+function isDescendant(ancestorId, nodeId) {
+  let current = getNode(ancestorId);
+  while (current) {
+    if (current.id === nodeId) return true;
+    current = current.parentId ? getNode(current.parentId) : null;
+  }
+  return false;
+}
+
+/** Validate whether sourceId can be moved to become a child of newParentId */
+function canMoveNodeToParent(sourceId, newParentId) {
+  const node = getNode(sourceId);
+  if (!node || node.parentId === null) return false;  // root unmovable
+  if (sourceId === newParentId) return false;
+
+  // Cycle: newParent must not be a descendant of source
+  if (isDescendant(newParentId, sourceId)) return false;
+
+  // Max depth: newLevel ≤ 3
+  const newLevel = getNodeLevel(newParentId) + 1;
+  if (newLevel > 3) return false;
+
+  // All descendants must still fit in ≤ 3 levels
+  const sourceLevel = getNodeLevel(sourceId);
+  const levelDiff = newLevel - sourceLevel;
+  const descendants = getDescendantIds(sourceId);
+  for (const descId of descendants) {
+    if (getNodeLevel(descId) + levelDiff > 3) return false;
+  }
+
+  return true;
+}
+
+/** Re-assign sequential sortOrder values to all siblings under parentId */
+function renumberSiblings(parentId) {
+  const siblings = getChildren(parentId);
+  siblings.forEach(function (s, i) {
+    s.sortOrder = i;
+  });
+}
+
+// ---- Drag event handlers (delegated on #treeEditor) ----
+
+function handleDragStart(e) {
+  const nodeEl = e.target.closest('.tree-node');
+  if (!nodeEl) return;
+  const nodeId = nodeEl.dataset.nodeId;
+  const node = getNode(nodeId);
+  // Root nodes cannot be dragged
+  if (!node || node.parentId === null) {
+    e.preventDefault();
+    return;
+  }
+  dragSourceId = nodeId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', nodeId);
+  nodeEl.classList.add('dragging');
+}
+
+function handleDragEnd(e) {
+  const nodeEl = e.target.closest('.tree-node');
+  if (nodeEl) nodeEl.classList.remove('dragging');
+  // Clear all drag visual feedback
+  document.querySelectorAll('.drag-over, .drag-over-children').forEach(function (el) {
+    el.classList.remove('drag-over', 'drag-over-children');
+  });
+  dragSourceId = null;
+}
+
+function handleDragOverDelegated(e) {
+  const targetInner = e.target.closest('.tree-node-column-inner');
+  if (!targetInner) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+
+  const targetNodeEl = targetInner.querySelector('.tree-node');
+  if (!targetNodeEl) return;
+  const targetId = targetNodeEl.dataset.nodeId;
+  const sourceId = dragSourceId;
+  if (!sourceId || sourceId === targetId) return;
+
+  // Decide: hovering over the node itself → "make child"
+  //            hovering over children/connector area → "insert as sibling"
+  const isOverNode = targetNodeEl.contains(e.target);
+
+  targetInner.classList.remove('drag-over', 'drag-over-children');
+
+  if (isOverNode) {
+    if (canMoveNodeToParent(sourceId, targetId)) {
+      targetInner.classList.add('drag-over');
+    }
+  } else {
+    const targetNode = getNode(targetId);
+    if (targetNode && targetNode.parentId !== null) {
+      if (canMoveNodeToParent(sourceId, targetNode.parentId)) {
+        targetInner.classList.add('drag-over-children');
+      }
+    }
+  }
+}
+
+function handleDragLeaveDelegated(e) {
+  const targetInner = e.target.closest('.tree-node-column-inner');
+  if (!targetInner) return;
+  targetInner.classList.remove('drag-over', 'drag-over-children');
+}
+
+function handleDropDelegated(e) {
+  e.preventDefault();
+  const targetInner = e.target.closest('.tree-node-column-inner');
+  if (!targetInner) return;
+  targetInner.classList.remove('drag-over', 'drag-over-children');
+
+  const targetNodeEl = targetInner.querySelector('.tree-node');
+  if (!targetNodeEl) return;
+  const targetId = targetNodeEl.dataset.nodeId;
+  const sourceId = dragSourceId;
+  if (!sourceId || sourceId === targetId) return;
+
+  const sourceNode = getNode(sourceId);
+  const targetNode = getNode(targetId);
+  if (!sourceNode || !targetNode) return;
+  if (sourceNode.parentId === null) return; // cannot move root
+
+  const oldParentId = sourceNode.parentId;
+  const isDropOnNode = targetNodeEl.contains(e.target);
+
+  if (isDropOnNode) {
+    // ── Make source a child of target ──
+    if (!canMoveNodeToParent(sourceId, targetId)) {
+      showStatus('无法移动到该位置（层级限制或循环依赖）');
+      return;
+    }
+    sourceNode.parentId = targetId;
+    renumberSiblings(targetId);
+    renumberSiblings(oldParentId);
+    showStatus('节点已移动');
+  } else {
+    // ── Insert source as a sibling of target ──
+    const newParentId = targetNode.parentId;
+    if (newParentId === null) {
+      showStatus('不能将节点移到根级别');
+      return;
+    }
+    if (!canMoveNodeToParent(sourceId, newParentId)) {
+      showStatus('无法移动到该位置（层级限制或循环依赖）');
+      return;
+    }
+    sourceNode.parentId = newParentId;
+    // Position source just before the target node
+    sourceNode.sortOrder = targetNode.sortOrder - 0.5;
+    renumberSiblings(newParentId);
+    renumberSiblings(oldParentId);
+    showStatus('节点已移动');
+  }
+
+  dirty = true;
+  renderAll();
+}
+
+function initDragDrop() {
+  const container = document.getElementById('treeEditor');
+  if (!container) return;
+  container.addEventListener('dragstart', handleDragStart);
+  container.addEventListener('dragend', handleDragEnd);
+  container.addEventListener('dragover', handleDragOverDelegated);
+  container.addEventListener('dragleave', handleDragLeaveDelegated);
+  container.addEventListener('drop', handleDropDelegated);
+}
+
+function renameNode(id, name) {
+  const node = getNode(id);
+  if (!node) return;
+  node.name = name;
+  dirty = true;
+}
+
+function updateNodeData(id, field, value) {
+  const node = getNode(id);
+  if (!node) return;
+  if (!node.data) node.data = { taskName: '', taskTime: '', taskPerson: '' };
+  node.data[field] = value;
+  dirty = true;
+}
+
+// =============================================================
+// 4. 渲染引擎
+// =============================================================
+
+function renderAll() {
+  renderTree();
+  renderCards();
+  updateSummary();
+}
+
+// =============================================================
+// 4a. 树渲染
+// =============================================================
+
+function renderTree() {
+  const container = document.getElementById('treeEditor');
+  if (!container) return;
+
+  const nested = buildNestedTree();
+  if (nested.length === 0) {
+    container.innerHTML = '<div class="tree-empty">暂无结构，请先加载项目。</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  const treeRoot = document.createElement('div');
+  treeRoot.className = 'tree-root';
+
+  // Render each root-level node as a column
+  for (const rootNode of nested) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node-column';
+    wrapper.appendChild(renderTreeNode(rootNode));
+    treeRoot.appendChild(wrapper);
+  }
+
+  container.appendChild(treeRoot);
+}
+
+function renderTreeNode(node) {
+  const col = document.createElement('div');
+  col.className = 'tree-node-column-inner';
+  col.dataset.nodeId = node.id;
+
+  // === Node element ===
+  const nodeEl = document.createElement('div');
+  nodeEl.className = 'tree-node' + (node.parentId === null ? ' project-node' : '');
+  nodeEl.dataset.nodeId = node.id;
+  nodeEl.draggable = true;
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'tree-node-name';
+  nameInput.value = node.name;
+  nameInput.placeholder = '输入名称';
+  nameInput.addEventListener('input', function () {
+    renameNode(node.id, this.value);
+    // Update card title if visible
+    const cardTitle = document.querySelector('.structure-card[data-node-id="' + node.id + '"] .structure-card-title');
+    if (cardTitle) cardTitle.textContent = this.value || '未命名';
+  });
+  nameInput.addEventListener('blur', function () {
+    if (!this.value.trim()) {
+      this.value = '未命名';
+      renameNode(node.id, '未命名');
+    }
+  });
+  nodeEl.appendChild(nameInput);
+
+  // Actions
+  const actions = document.createElement('span');
+  actions.className = 'tree-node-actions';
+
+  // Add button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'tree-btn add-btn';
+  addBtn.textContent = '+';
+  addBtn.title = '添加下级结构';
+  addBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    addNode(node.id);
+  });
+  actions.appendChild(addBtn);
+
+  // Delete button (not for root)
+  if (node.parentId !== null) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'tree-btn delete-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = '删除该结构';
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (confirm('确认删除「' + node.name + '」及其所有下级结构？')) {
+        deleteNode(node.id);
+      }
+    });
+    actions.appendChild(delBtn);
+  }
+
+  nodeEl.appendChild(actions);
+  col.appendChild(nodeEl);
+
+  // === Children ===
+  if (node.children && node.children.length > 0) {
+    // Connector line
+    const connector = document.createElement('div');
+    connector.className = 'tree-connector';
+    connector.textContent = '→';
+    col.appendChild(connector);
+
+    const childrenContainer = document.createElement('div');
+    childrenContainer.className = 'tree-children';
+    for (const child of node.children) {
+      childrenContainer.appendChild(renderTreeNode(child));
+    }
+    col.appendChild(childrenContainer);
+  }
+
+  return col;
+}
+
+// =============================================================
+// 4b. 卡片渲染
+// =============================================================
+
+function renderCards() {
+  const container = document.getElementById('cardsArea');
+  if (!container) return;
+
+  const nested = buildNestedTree();
+  const allNodes = getAllNodesFlat(nested);
+
+  if (allNodes.length === 0) {
+    container.innerHTML =
+      '<div class="cards-empty">暂无结构卡片，请在顶部编辑区添加结构节点。</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = 'cards-grid';
+
+  for (const node of allNodes) {
+    grid.appendChild(renderCard(node));
+  }
+
+  container.appendChild(grid);
+}
+
+function getAllNodesFlat(nestedNodes) {
+  const result = [];
+  function walk(nodes) {
+    for (const n of nodes) {
+      result.push(n);
+      if (n.children && n.children.length > 0) {
+        walk(n.children);
+      }
+    }
+  }
+  walk(nestedNodes);
+  return result;
+}
+
+function renderCard(node) {
+  const card = document.createElement('div');
+  card.className = 'structure-card';
+  card.dataset.nodeId = node.id;
+
+  const level = getNodeLevel(node.id);
+
+  const header = document.createElement('div');
+  header.className = 'structure-card-header';
+
+  const levelLabel = document.createElement('span');
+  levelLabel.className = 'structure-card-level';
+  const levelNames = ['', '一级', '二级', '三级'];
+  levelLabel.textContent = levelNames[level] || ('L' + level);
+  header.appendChild(levelLabel);
+
+  const title = document.createElement('span');
+  title.className = 'structure-card-title';
+  title.textContent = node.name || '未命名';
+  header.appendChild(title);
+
+  card.appendChild(header);
+
+  // Close button (右上角 ✕)
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'structure-card-close';
+  closeBtn.textContent = '✕';
+  closeBtn.title = '删除该结构';
+  closeBtn.addEventListener('click', function () {
+    if (confirm('确认删除「' + node.name + '」及其所有下级结构？')) {
+      deleteNode(node.id);
+    }
+  });
+  card.appendChild(closeBtn);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'structure-card-body';
+
+  // Task name field
+  body.appendChild(createCardField('任务名称', node.data?.taskName || '', function (val) {
+    updateNodeData(node.id, 'taskName', val);
+  }));
+
+  // Task time field
+  body.appendChild(createCardField('任务时间', node.data?.taskTime || '', function (val) {
+    updateNodeData(node.id, 'taskTime', val);
+  }));
+
+  // Task person field
+  body.appendChild(createCardField('任务人员', node.data?.taskPerson || '', function (val) {
+    updateNodeData(node.id, 'taskPerson', val);
+  }));
+
+  card.appendChild(body);
+
+  return card;
+}
+
+function createCardField(label, value, onChange) {
+  const field = document.createElement('div');
+  field.className = 'structure-card-field';
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'structure-card-label';
+  labelEl.textContent = label;
+  field.appendChild(labelEl);
+
+  const valueEl = document.createElement('div');
+  valueEl.className = 'structure-card-value';
+  valueEl.contentEditable = true;
+  valueEl.textContent = value;
+  valueEl.dataset.placeholder = '点击编辑' + label;
+  valueEl.addEventListener('blur', function () {
+    const val = this.textContent.trim();
+    onChange(val);
+  });
+  valueEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.blur();
+    }
+  });
+  field.appendChild(valueEl);
+
+  return field;
+}
+
+function updateSummary() {
+  const el = document.getElementById('structureSummary');
+  if (!el) return;
+  const total = treeData.length;
+  const leafCount = getLeafNodes().length;
+  el.textContent = total + ' 个节点 · ' + leafCount + ' 个末端结构 · ' + (dirty ? '有未保存更改' : '已保存');
+}
+
+// =============================================================
+// 5. 转换（数据 ↔ API）
+// =============================================================
+
+function treeToPayload() {
   return {
-    nodes: JSON.parse(JSON.stringify(nodes || [])),
-    edges: JSON.parse(JSON.stringify(edges || [])),
+    tree: JSON.parse(JSON.stringify(treeData)),
     structureSource: 'manually_modified',
     updatedAt: new Date().toISOString(),
   };
 }
 
-// =============================================================
-// 4. 自定义 React Flow 节点
-// =============================================================
-
-function GPNode({ id, data, selected }) {
-  const index = (data.index != null ? data.index : 0) + 1;
-  const progress = data.progress || 0;
-  const leader = data.leader || '';
-  const taskCount = data.taskCount || 0;
-
-  return html`
-    <div
-      className=${'gp-rf-node' + (selected ? ' selected' : '')}
-      data-node-id=${id}
-    >
-      <${RFHandle} type="target" position=${RFPosition.Top} />
-      <div className="gp-rf-node-header">
-        <span className="gp-rf-node-index">${String(index).padStart(2, '0')}</span>
-        <h4 title=${data.title}>${data.title}</h4>
-      </div>
-      ${data.description
-        ? html`<p className="gp-rf-node-desc">${data.description}</p>`
-        : ''}
-      <div className="gp-rf-node-meta">
-        <span>负责人 <strong>${leader || '待指定'}</strong></span>
-        <span>进度 <strong>${progress}%</strong></span>
-        <span>任务 <strong>${taskCount}</strong></span>
-      </div>
-      <div className="gp-rf-node-progress">
-        <span
-          className="gp-rf-node-progress-bar"
-          style=${{ width: Math.max(4, progress) + '%' }}
-        ></span>
-      </div>
-      <${RFHandle} type="source" position=${RFPosition.Bottom} />
-    </div>
-  `;
-}
-
-function RootNode({ data, selected }) {
-  return html`
-    <div className=${'gp-rf-root' + (selected ? ' selected' : '')}>
-      <div className="gp-rf-root-icon">GP</div>
-      <div>
-        <h4>${data.title}</h4>
-        <p>${data.description || '根节点'}</p>
-      </div>
-      <${RFHandle} type="source" position=${RFPosition.Bottom} />
-    </div>
-  `;
-}
-
-const NODE_TYPES = { module: GPNode, root: RootNode };
-
-// =============================================================
-// 5. 默认边样式
-// =============================================================
-
-const DEFAULT_EDGE_OPTIONS = {
-  style: { stroke: '#bf5a36', strokeWidth: 2, opacity: 0.45 },
-  type: 'smoothstep',
-};
-
-// =============================================================
-// 6. 模块卡片列表
-// =============================================================
-
-function ModuleCardList({ nodes, onEdit, onDelete }) {
-  const moduleNodes = (nodes || []).filter((n) => n.type === 'module');
-
-  if (!moduleNodes.length) {
-    return html`
-      <div className="module-card-empty">
-        当前没有模块。点击「+ 新增模块」创建，或加载已有项目。
-      </div>
-    `;
+function payloadToTree(payload) {
+  if (!payload) return;
+  const nodes = payload.tree || payload.nodes || [];
+  if (nodes.length === 0) return;
+  treeData = nodes;
+  // Fix parentId: the root node has parentId null
+  const hasRoot = treeData.some((n) => n.parentId === null);
+  if (!hasRoot && treeData.length > 0) {
+    // Use first node as root
+    treeData[0].parentId = null;
   }
-
-  return moduleNodes.map(
-    (node, i) => html`
-      <div className="module-card" key=${node.id}>
-        <div className="module-card-main">
-          <h4>${String(i + 1).padStart(2, '0')}. ${node.data.title}</h4>
-          ${node.data.description
-            ? html`<p>${node.data.description}</p>`
-            : ''}
-          <div className="module-card-meta">
-            <span>负责人 <strong>${node.data.leader || '待指定'}</strong></span>
-            <span>进度 <strong>${node.data.progress || 0}%</strong></span>
-            <span>任务 <strong>${node.data.taskCount || 0}</strong></span>
-            <span>${node.data.createdBy === 'manual' ? '手动' : 'AI'}</span>
-          </div>
-        </div>
-        <div className="module-card-actions">
-          <button className="edit-module-btn" onClick=${() => onEdit(node.id)} type="button">编辑</button>
-          <button className="delete-module-btn" onClick=${() => onDelete(node.id)} type="button">删除</button>
-        </div>
-      </div>
-    `
-  );
+  // Recalculate counter
+  nodeIdCounter = treeData.reduce(function (max, n) {
+    const match = n.id.match(/^n_(\d+)/);
+    const num = match ? parseInt(match[1], 10) : NaN;
+    return isNaN(num) ? max : Math.max(max, num);
+  }, 0);
+  dirty = false;
 }
 
 // =============================================================
-// 7. React Flow 画布
+// 6. 保存 & 加载
 // =============================================================
 
-function RFCanvas({ nodes, edges, onNodesChange, onEdgesChange }) {
-  return html`
-    <${RFReactFlowProvider}>
-      <${RFReactFlow}
-        nodes=${nodes}
-        edges=${edges}
-        onNodesChange=${onNodesChange}
-        onEdgesChange=${onEdgesChange}
-        nodeTypes=${NODE_TYPES}
-        defaultEdgeOptions=${DEFAULT_EDGE_OPTIONS}
-        fitView
-        fitViewOptions=${{ padding: 0.3 }}
-        minZoom=${0.2}
-        maxZoom=${2.5}
-        snapToGrid
-        snapGrid=${[20, 20]}
-        panOnDrag=${true}
-        zoomOnScroll=${true}
-        selectNodesOnDrag=${false}
-        deleteKeyCode=${null}
-        multiSelectionKeyCode=${null}
-      >
-        <${RFBackground} variant="lines" gap=${20} size=${1} color="rgba(31,36,31,0.06)" />
-        <${RFControls}
-          showInteractive=${false}
-          style=${{
-            background: 'rgba(255,255,255,0.88)',
-            borderRadius: 12,
-            border: '1px solid rgba(31,36,31,0.08)',
-            boxShadow: '0 4px 12px rgba(34,28,16,0.08)',
-          }}
-        />
-      <//>
-    <//>
-  `;
-}
-
-// =============================================================
-// 8. 主应用组件
-// =============================================================
-
-function StructureApp() {
-  // Initialise from global state (pre-loaded data)
-  const initialNodes = window.__appState.nodes.length
-    ? window.__appState.nodes
-    : [
-        {
-          id: 'root',
-          type: 'root',
-          position: { x: 400, y: 50 },
-          data: {
-            title: '项目根节点',
-            description: '暂无数据',
-            leader: '',
-            members: [],
-            progress: 0,
-            taskCount: 0,
-            parentId: null,
-            createdBy: 'ai',
-            structureSource: 'ai_generated',
-            index: -1,
-          },
-        },
-      ];
-  const initialEdges = window.__appState.edges.length ? window.__appState.edges : [];
-
-  const [nodes, setNodes, onNodesChange] = RFuseNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = RFuseEdgesState(initialEdges);
-
-  // Sync global state after mount
-  React.useEffect(() => {
-    window.__appState.nodes = nodes;
-    window.__appState.setNodes = setNodes;
-  }, [nodes, setNodes]);
-
-  React.useEffect(() => {
-    window.__appState.edges = edges;
-    window.__appState.setEdges = setEdges;
-  }, [edges, setEdges]);
-
-  // Handle node changes (drag → mark manually_modified)
-  const handleNodesChange = React.useCallback(
-    (changes) => {
-      onNodesChange(changes);
-
-      const positionChanges = changes.filter(
-        (c) => c.type === 'position' && c.position && !c.dragging
-      );
-      if (positionChanges.length > 0) {
-        const draggedIds = new Set(positionChanges.map((c) => c.id));
-        setTimeout(() => {
-          setNodes((prev) =>
-            prev.map((n) =>
-              draggedIds.has(n.id)
-                ? { ...n, data: { ...n.data, structureSource: 'manually_modified' } }
-                : n
-            )
-          );
-        }, 0);
-      }
-    },
-    [onNodesChange, setNodes]
-  );
-
-  // Handle edit (opens vanilla modal)
-  const handleEdit = React.useCallback(
-    (nodeId) => {
-      const node = nodes.find((n) => n.id === nodeId);
-      if (!node) return;
-      openEditModal(node);
-    },
-    [nodes]
-  );
-
-  // Handle delete
-  const handleDelete = React.useCallback(
-    (nodeId) => {
-      const node = nodes.find((n) => n.id === nodeId);
-      if (!node) return;
-
-      const hasChildren = nodes.some((n) => n.data && n.data.parentId === nodeId);
-      if (hasChildren) {
-        alert('请先删除或移动子模块');
-        return;
-      }
-
-      if (!confirm('确认删除模块「' + (node.data.title || '') + '」？')) return;
-
-      setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-      setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
-    },
-    [nodes, setNodes, setEdges]
-  );
-
-  // Handle save
-  const handleSave = React.useCallback(() => {
-    saveStructure();
-  }, []);
-
-  // Handle add module (opens vanilla modal)
-  const handleAdd = React.useCallback(() => {
-    openAddModal();
-  }, []);
-
-  const moduleCount = (nodes || []).filter((n) => n.type === 'module').length;
-
-  return html`
-    <div className="structure-body-panel">
-      <!-- Header -->
-      <div className="structure-body-header">
-        <div>
-          <h3>结构内容编辑区</h3>
-          <p>${moduleCount} 个模块 · 编辑或拖拽后点击保存</p>
-        </div>
-        <div className="structure-editor-actions">
-          <button className="add-module-btn" onClick=${handleAdd} type="button">
-            + 新增模块
-          </button>
-          <button className="save-all-btn" onClick=${handleSave} type="button">
-            💾 保存结构
-          </button>
-          <span className="save-status" id="saveStatus"></span>
-        </div>
-      </div>
-
-      <!-- Module cards -->
-      <div className="module-cards">
-        <${ModuleCardList}
-          nodes=${nodes}
-          onEdit=${handleEdit}
-          onDelete=${handleDelete}
-        />
-      </div>
-
-      <!-- React Flow canvas -->
-      <div className="rf-container">
-        <${RFCanvas}
-          nodes=${nodes}
-          edges=${edges}
-          onNodesChange=${handleNodesChange}
-          onEdgesChange=${onEdgesChange}
-        />
-      </div>
-    </div>
-  `;
-}
-
-// =============================================================
-// 9. React 渲染
-// =============================================================
-
-function renderReactApp() {
-  const container = document.getElementById('react-root');
-  if (!container) {
-    console.error('React root container not found');
-    return;
+function showStatus(msg, isError) {
+  const el = document.getElementById('structureStatus');
+  if (el) {
+    el.textContent = msg;
+    if (isError) el.style.color = 'var(--danger)';
+    else el.style.color = '';
   }
-
-  let root;
-  if (ReactDOM.createRoot) {
-    root = ReactDOM.createRoot(container);
-  } else {
-    // Fallback for older React builds
-    root = { render: (el) => ReactDOM.render(el, container) };
-  }
-
-  root.render(html`<${StructureApp} />`);
-  return root;
 }
 
-// =============================================================
-// 10. 弹窗管理 (Vanilla JS)
-// =============================================================
-
-function openEditModal(node) {
-  document.getElementById('editModuleNodeId').value = node.id;
-  document.getElementById('editModuleId').value = node.data.moduleId || '';
-  document.getElementById('editModuleName').value = node.data.title || '';
-  document.getElementById('editLeaderName').value = node.data.leader || '';
-  document.getElementById('editModuleDescription').value = node.data.description || '';
-
-  const project = window.__appState.projectData?.project || {};
-  const members = project.members || [];
-  document.getElementById('projectMemberNames').innerHTML = members
-    .map((m) => '<option value="' + (m.user?.name || m.name || '') + '"></option>')
-    .join('');
-
-  document.getElementById('moduleEditModal').classList.add('open');
-  document.getElementById('moduleEditModal').setAttribute('aria-hidden', 'false');
-  // Focus first input
-  setTimeout(() => document.getElementById('editModuleName')?.focus(), 100);
+function showSaveStatus(msg) {
+  const el = document.getElementById('saveStatus');
+  if (el) el.textContent = msg;
 }
-
-function closeEditModal() {
-  document.getElementById('moduleEditModal').classList.remove('open');
-  document.getElementById('moduleEditModal').setAttribute('aria-hidden', 'true');
-}
-
-function openAddModal() {
-  const project = window.__appState.projectData?.project || {};
-  const members = project.members || [];
-
-  document.getElementById('addModuleName').value = '';
-  document.getElementById('addModuleDescription').value = '';
-  document.getElementById('addLeaderName').value = '';
-  document.getElementById('projectMemberNamesAdd').innerHTML = members
-    .map((m) => '<option value="' + (m.user?.name || m.name || '') + '"></option>')
-    .join('');
-
-  document.getElementById('addModuleModal').classList.add('open');
-  document.getElementById('addModuleModal').setAttribute('aria-hidden', 'false');
-  setTimeout(() => document.getElementById('addModuleName')?.focus(), 100);
-}
-
-function closeAddModal() {
-  document.getElementById('addModuleModal').classList.remove('open');
-  document.getElementById('addModuleModal').setAttribute('aria-hidden', 'true');
-}
-
-// =============================================================
-// 11. 保存 & 加载
-// =============================================================
 
 async function saveStructure() {
-  const statusEl = document.getElementById('saveStatus');
-  const projectCode = window.__appState.currentProjectCode;
+  const projectCode = currentProjectCode;
   if (!projectCode) {
-    statusEl.textContent = '请先选择项目。';
+    showStatus('请先选择项目。');
     return;
   }
 
-  const nodes = window.__appState.nodes || [];
-  const edges = window.__appState.edges || [];
-  const payload = convertGraphToSavePayload(nodes, edges);
-
-  statusEl.textContent = '保存中...';
+  const payload = treeToPayload();
+  showSaveStatus('保存中...');
 
   try {
     const response = await fetch(
@@ -629,22 +679,27 @@ async function saveStructure() {
     if (!response.ok) {
       throw new Error('保存失败: ' + response.status);
     }
-    statusEl.textContent = '✅ 已保存';
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    dirty = false;
+    showSaveStatus('✅ 已保存');
+    updateSummary();
+    setTimeout(function () {
+      showSaveStatus('');
+    }, 3000);
+    showStatus('✅ 结构已保存');
   } catch (error) {
     console.error(error);
-    statusEl.textContent = '❌ 保存失败';
+    showSaveStatus('❌ 保存失败');
+    showStatus('保存失败: ' + error.message, true);
   }
 }
 
 async function loadStructureFromAPI(projectCode) {
-  const status = document.getElementById('structureStatus');
   if (!projectCode) {
-    status.textContent = '请选择项目。';
+    showStatus('请选择项目。');
     return;
   }
 
-  status.textContent = '正在加载项目结构...';
+  showStatus('正在加载项目结构...');
 
   let success = false;
 
@@ -655,11 +710,13 @@ async function loadStructureFromAPI(projectCode) {
     );
     if (response.ok) {
       const data = await response.json();
-      applyGraphData(data, projectCode);
-      status.textContent = '✅ 结构已加载';
+      applyStructureData(data.data || data, projectCode);
+      showStatus('✅ 结构已加载');
       success = true;
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) {
+    /* fall through */
+  }
 
   // Fallback: old /api/projects/:code/dashboard
   if (!success) {
@@ -672,58 +729,100 @@ async function loadStructureFromAPI(projectCode) {
       }
       const data = await dashResponse.json();
       applyDashboardData(data, projectCode);
-      status.textContent = '✅ 结构已加载';
+      showStatus('✅ 结构已加载 (Dashboard)');
       success = true;
     } catch (error) {
       console.error(error);
-      status.textContent = '❌ 加载失败，请确认后端服务和项目数据。';
+      showStatus('❌ 加载失败，请确认后端服务和项目数据。', true);
     }
   }
 
   if (success) {
     document.getElementById('structureProjectSelect').value = projectCode;
-    window.history.replaceState({}, '', '?projectCode=' + encodeURIComponent(projectCode));
+    window.history.replaceState(
+      {},
+      '',
+      '?projectCode=' + encodeURIComponent(projectCode)
+    );
   }
 }
 
-function applyGraphData(data, projectCode) {
-  const nodes = data.nodes || [];
-  const edges = data.edges || [];
+function applyStructureData(data, projectCode) {
+  currentProjectCode = projectCode;
 
-  window.__appState.currentProjectCode = projectCode;
-  window.__appState.nodes = nodes;
-  window.__appState.edges = edges;
-
-  if (window.__appState.setNodes) window.__appState.setNodes(nodes);
-  if (window.__appState.setEdges) window.__appState.setEdges(edges);
+  if (data.tree && data.tree.length > 0) {
+    payloadToTree(data);
+  } else {
+    // Legacy format: nodes/edges — convert if possible
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    if (nodes.length > 0) {
+      treeData = convertLegacyNodes(nodes, edges);
+    } else {
+      // Fallback: init from project name
+      const projName = data.project?.name || data.name || projectCode;
+      initEmptyTree(projName);
+    }
+  }
 
   // Update hero
-  const rootNode = nodes.find((n) => n.type === 'root');
+  const rootNode = treeData.find((n) => n.parentId === null);
   if (rootNode) {
     document.getElementById('structureProjectName').textContent =
-      rootNode.data.title || '项目结构';
+      rootNode.name || '项目结构';
     document.getElementById('structureProjectMeta').textContent =
-      '项目编码 ' + projectCode + ' · ' + (rootNode.data.description || '');
+      '项目编码 ' + projectCode;
   }
+
+  renderAll();
 }
 
 function applyDashboardData(data, projectCode) {
-  const graph = convertDashboardToGraph(data);
-  window.__appState.projectData = data;
-  window.__appState.currentProjectCode = projectCode;
-  window.__appState.nodes = graph.nodes;
-  window.__appState.edges = graph.edges;
+  currentProjectCode = projectCode;
+  const project = data.project || {};
+  projectName = project.name || '项目结构';
 
-  if (window.__appState.setNodes) window.__appState.setNodes(graph.nodes);
-  if (window.__appState.setEdges) window.__appState.setEdges(graph.edges);
+  const modules = [...(project.modules || [])].sort(
+    (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
+  );
+
+  // Build tree from modules
+  const rootId = generateId();
+  treeData = [
+    {
+      id: rootId,
+      name: projectName,
+      parentId: null,
+      sortOrder: 0,
+      data: { taskName: '', taskTime: '', taskPerson: '' },
+    },
+  ];
+
+  for (const mod of modules) {
+    const nodeId = generateId();
+    const tasks = (data.tasks || []).filter(
+      (t) => t.module?.id === mod.id || t.module?.name === mod.name
+    );
+    treeData.push({
+      id: nodeId,
+      name: mod.name || '未命名模块',
+      parentId: rootId,
+      sortOrder: treeData.length,
+      data: {
+        taskName: tasks[0]?.name || mod.description || '',
+        taskTime: tasks[0]?.dueTime || tasks[0]?.startTime || '',
+        taskPerson: mod.leaderMember?.user?.name || '',
+      },
+    });
+  }
+
+  dirty = false;
 
   // Update hero
-  const project = data.project || {};
-  document.getElementById('structureProjectName').textContent =
-    project.name || '项目结构';
+  document.getElementById('structureProjectName').textContent = projectName;
   document.getElementById('structureProjectMeta').textContent =
     '项目编码 ' +
-    (projectCode || '--') +
+    projectCode +
     ' · ' +
     (project.location || '待填写地点') +
     ' · ' +
@@ -733,10 +832,88 @@ function applyDashboardData(data, projectCode) {
   document.getElementById('backToDashboard').href =
     '/console/dashboard' +
     (projectCode ? '?projectCode=' + encodeURIComponent(projectCode) : '');
+
+  renderAll();
+}
+
+function convertLegacyNodes(nodes, edges) {
+  const result = [];
+  const nodeMap = {};
+
+  // Find root
+  const rootNode = nodes.find((n) => n.type === 'root' || (n.parentId === null || n.parentId === undefined));
+  if (!rootNode) return [];
+
+  const rootId = generateId();
+  result.push({
+    id: rootId,
+    name: rootNode.data?.title || '项目根节点',
+    parentId: null,
+    sortOrder: 0,
+    data: {
+      taskName: '',
+      taskTime: '',
+      taskPerson: '',
+    },
+  });
+  nodeMap[rootNode.id] = rootId;
+
+  // Build child mapping from edges
+  const childMap = {};
+  for (const edge of edges) {
+    if (!childMap[edge.source]) childMap[edge.source] = [];
+    childMap[edge.source].push(edge.target);
+  }
+
+  function addChildren(parentNodeId, newParentId) {
+    const childNodeIds = childMap[parentNodeId] || [];
+    for (const childId of childNodeIds) {
+      const childNode = nodes.find((n) => n.id === childId);
+      if (!childNode) continue;
+      const newId = generateId();
+      result.push({
+        id: newId,
+        name: childNode.data?.title || '未命名',
+        parentId: newParentId,
+        sortOrder: childNode.data?.index || 0,
+        data: {
+          taskName: childNode.data?.description || '',
+          taskTime: '',
+          taskPerson: childNode.data?.leader || '',
+        },
+      });
+      nodeMap[childNode.id] = newId;
+      addChildren(childNode.id, newId);
+    }
+  }
+
+  addChildren(rootNode.id, rootId);
+
+  return result;
 }
 
 // =============================================================
-// 12. 项目列表管理
+// 7. 工具函数
+// =============================================================
+
+function formatShortDate(value) {
+  if (!value) return '--';
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+    }).format(new Date(value));
+  } catch (_) {
+    return '--';
+  }
+}
+
+function getProjectCode(project) {
+  return project?.code || project?.projectCode || project?.id || '';
+}
+
+// =============================================================
+// 8. 项目列表管理
 // =============================================================
 
 async function fetchProjects() {
@@ -754,7 +931,7 @@ function renderProjectOptions(projects, selectedCode) {
     return;
   }
   select.innerHTML = projects
-    .map((project) => {
+    .map(function (project) {
       const code = getProjectCode(project);
       return (
         '<option value="' +
@@ -772,17 +949,22 @@ function renderProjectOptions(projects, selectedCode) {
 }
 
 // =============================================================
-// 13. Bootstrap
+// 9. Bootstrap
 // =============================================================
 
 async function bootstrap() {
   const params = new URLSearchParams(window.location.search);
-  const requestedCode = params.get('projectCode') || params.get('projectId') || '';
+  const requestedCode =
+    params.get('projectCode') || params.get('projectId') || '';
   const select = document.querySelector('#structureProjectSelect');
   const loadButton = document.querySelector('#loadStructureProject');
 
-  // Render React app first (empty/placeholder state)
-  renderReactApp();
+  // Initialize empty tree
+  initEmptyTree('项目结构');
+  renderAll();
+
+  // Initialize drag-and-drop on the tree editor container
+  initDragDrop();
 
   // Load project list
   try {
@@ -793,15 +975,12 @@ async function bootstrap() {
       ) || projects[0];
     const selectedCode = getProjectCode(selectedProject);
 
-    // Store project data for member datalist
-    window.__appState.projectData = selectedProject
-      ? { project: selectedProject }
-      : null;
-
     renderProjectOptions(projects, selectedCode);
 
-    // Load structure (delay to let React mount first)
-    setTimeout(() => loadStructureFromAPI(selectedCode), 200);
+    // Load structure
+    setTimeout(function () {
+      loadStructureFromAPI(selectedCode);
+    }, 200);
   } catch (error) {
     console.error(error);
     document.getElementById('structureStatus').textContent =
@@ -810,78 +989,22 @@ async function bootstrap() {
 
   // ===== Event bindings =====
 
+  // Save button
+  document
+    .getElementById('saveStructureBtn')
+    .addEventListener('click', saveStructure);
+
   // Hero: load / switch project
-  loadButton.addEventListener('click', () =>
-    loadStructureFromAPI(select.value.trim())
-  );
-  select.addEventListener('change', () =>
-    loadStructureFromAPI(select.value.trim())
-  );
-
-  // Edit modal events
-  document.getElementById('closeModuleEdit').addEventListener('click', closeEditModal);
-  document.getElementById('cancelModuleEdit').addEventListener('click', closeEditModal);
-
-  const editModal = document.getElementById('moduleEditModal');
-  editModal.addEventListener('click', (event) => {
-    if (event.target === editModal) closeEditModal();
+  loadButton.addEventListener('click', function () {
+    loadStructureFromAPI(select.value.trim());
   });
-
-  document.getElementById('moduleEditForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const nodeId = document.getElementById('editModuleNodeId').value;
-    const title = document.getElementById('editModuleName').value.trim();
-    const leader = document.getElementById('editLeaderName').value.trim();
-    const description = document.getElementById('editModuleDescription').value.trim();
-
-    if (!nodeId || !title) {
-      document.getElementById('structureStatus').textContent = '模块名称不能为空。';
-      return;
-    }
-
-    window.__updateNodeData(nodeId, { title, leader, description });
-    closeEditModal();
-    document.getElementById('structureStatus').textContent = '✅ 模块已更新。';
-    setTimeout(() => { document.getElementById('structureStatus').textContent = ''; }, 2500);
-  });
-
-  // Add modal events
-  document.getElementById('closeAddModule').addEventListener('click', closeAddModal);
-  document.getElementById('cancelAddModule').addEventListener('click', closeAddModal);
-
-  const addModal = document.getElementById('addModuleModal');
-  addModal.addEventListener('click', (event) => {
-    if (event.target === addModal) closeAddModal();
-  });
-
-  document.getElementById('addModuleForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const title = document.getElementById('addModuleName').value.trim();
-    const description = document.getElementById('addModuleDescription').value.trim();
-    const leader = document.getElementById('addLeaderName').value.trim();
-
-    if (!title) {
-      alert('请输入模块名称');
-      return;
-    }
-
-    window.__addNode(title, description, leader);
-    closeAddModal();
-    document.getElementById('structureStatus').textContent = '✅ 新模块已创建，请保存。';
-    setTimeout(() => { document.getElementById('structureStatus').textContent = ''; }, 2500);
-  });
-
-  // Keyboard: Escape to close modals
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeEditModal();
-      closeAddModal();
-    }
+  select.addEventListener('change', function () {
+    loadStructureFromAPI(select.value.trim());
   });
 }
 
 // =============================================================
-// 14. 启动
+// 10. 启动
 // =============================================================
 
 if (document.readyState === 'loading') {

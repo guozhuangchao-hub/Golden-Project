@@ -1,3 +1,5 @@
+require("dotenv").config({path:"/opt/golden-project/.env"});
+
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
@@ -556,41 +558,28 @@ if (user.role === 'admin') loadUsers();
             }
           }
           
-          const userContent = '已知项目名称: ' + projectName + '\n\n上传文件内容:\n' + fileTexts.join('\n') + '\n\n请按分析规则提取JSON。';
+          const prompt = [
+            '你是一个项目信息提取助手。',
+            '根据用户上传的文档内容，提取以下项目信息：',
+            '- projectName: 项目名称',
+            '- projectCode: 项目编号',
+            '- location: 地点',
+            '- startDate: 开始日期',
+            '- endDate: 结束日期',
+            '- description: 项目描述',
+            '- modules: 模块列表（name/leader/desc）',
+            '- members: 成员名单（name/role/title）',
+            '- tasks: 任务清单（title/owner/deadline/priority）',
+            '',
+            '已知项目名称: ' + projectName,
+            '上传文件:',
+            fileTexts.join('\n'),
+            '',
+            '请以JSON格式返回，只返回JSON，不要其他文字：',
+            '{"projectName":"...","projectCode":"...","location":"...","startDate":"...","endDate":"...","description":"...","modules":[],"members":[],"tasks":[]}',
+          ].join('\n');
 
-          const DEEPSEEK_KEY = process.env.GP_AGENT_KEY || '';
-          const reply = await new Promise((resolve, reject) => {
-            try {
-              const https = require('https');
-              const rules = require('fs').readFileSync('/opt/golden-project/analysis_rules.md', 'utf8');
-              const reqData = JSON.stringify({
-                model: 'deepseek-chat',
-                messages: [
-                  { role: 'system', content: rules },
-                  { role: 'user', content: userContent }
-                ],
-                temperature: 0.1,
-                max_tokens: 4000,
-                response_format: { type: 'json_object' }
-              });
-              const r = https.request('https://api.deepseek.com/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
-              }, (res) => {
-                let d = '';
-                res.on('data', c2 => d += c2);
-                res.on('end', () => {
-                  try {
-                    const parsed = JSON.parse(d);
-                    resolve(parsed.choices?.[0]?.message?.content || '');
-                  } catch { resolve(''); }
-                });
-              });
-              r.on('error', reject);
-              r.write(reqData);
-              r.end();
-            } catch(e) { reject(e); }
-          });
+          const reply = await new Promise(function(resolve, reject) { try { var https = require("https"); var rules = require("fs").readFileSync("/opt/golden-project/analysis_rules.md","utf8"); var data = JSON.stringify({model:"deepseek-chat",messages:[{role:"system",content:rules},{role:"user",content:prompt}],temperature:0.1,max_tokens:4000,response_format:{type:"json_object"}}); var r = https.request("https://api.deepseek.com/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.GP_AGENT_KEY}},function(resp){ var d = ""; resp.on("data",function(c){d+=c}); resp.on("end",function(){ try { resolve(JSON.parse(d).choices[0].message.content); } catch(e) { resolve(""); } }); }); r.on("error",function(e){resolve("")}); r.write(data); r.end(); } catch(e) { resolve(""); } });
 
           let data;
           try {
@@ -600,6 +589,19 @@ if (user.role === 'admin') loadUsers();
           } catch(e) {
             return res.end(JSON.stringify({ error: 'AI 分析结果格式错误，请重试', raw: reply.slice(0,200) }));
           }
+
+                    // Save files to project folder
+          try {
+            var safename = (projectName || "project").replace(/[:*?"<>|]/g, "_");
+            var dpath = "/opt/golden-project/" + String.fromCharCode(39033, 30446, 21015, 34920) + "/" + safename + "/" + String.fromCharCode(21021, 22987, 25991, 26723);
+            if (!require("fs").existsSync(dpath)) require("fs").mkdirSync(dpath, { recursive: true });
+            for (var fi = 0; fi < files.length; fi++) {
+              var ff = files[fi];
+              var fname = ff.name.replace(/[:*?"<>|]/g, "_");
+              var fpath = dpath + "/" + fname;
+              if (!require("fs").existsSync(fpath)) require("fs").writeFileSync(fpath, Buffer.from(ff.content, "base64"));
+            }
+          } catch(e) {}
 
           // Store analysis result
           var storeKey = 'intake_' + pid;
@@ -612,25 +614,6 @@ if (user.role === 'admin') loadUsers();
           // Store in memory (will be lost on restart, but that's OK for now)
           // TODO: persist to database
           process.env[storeKey] = JSON.stringify(existing);
-          // Save uploaded files to project folder
-          try {
-            const fs = require("fs");
-            const safeName = (projectName || "project").replace(/[\\\/:?"<>|]/g, "");
-            const docsDir = "/opt/golden-project/项目列表/" + safeName + "/初始文档";
-            if (!fs.existsSync(docsDir)) {
-              fs.mkdirSync(docsDir, { recursive: true });
-            }
-            for (const f of files) {
-              try {
-                const fn = f.name.replace(/[\\\/:?"<>|]/g, "");
-                const fp = docsDir + "/" + fn;
-                if (!fs.existsSync(fp)) {
-                  fs.writeFileSync(fp, Buffer.from(f.content, "base64"));
-                }
-              } catch(e) {}
-            }
-          } catch(e) { console.error("File save error:", e.message); }
-
 
           res.end(JSON.stringify({ ok: true, data: existing }));
         } catch(e) {
@@ -667,64 +650,133 @@ if (user.role === 'admin') loadUsers();
     }
 
     
-    // POST /intake/:projectId/confirm - Confirm project
+
+    // POST /intake/:projectId/confirm
     if (req.method === 'POST' && parts[0] === 'intake' && parts[1] && parts[2] === 'confirm') {
-      const pid = parts[1];
-      let body = '';
-      req.on('data', c2 => body += c2);
+      const p = parts[1]; let b = '';
+      req.on('data', c2 => b += c2);
       req.on('end', async () => {
         try {
-          const data = JSON.parse(body);
-          const existing = await gpApi('GET', '/api/projects/' + pid).catch(() => ({}));
-          if (!existing || !existing.id) {
-            return res.end(JSON.stringify({ error: '项目不存在: ' + pid }));
-          }
-          const projectId = existing.id;
-          const projectCode = existing.code || pid;
-                    // Save files to project folder
-          try {
-            const fs = require('fs');
-            const dirName = (data.projectName || 'project').replace(/[\\/:*?"<>|]/g, '_');
-            const projDir = '/opt/golden-project/项目列表/' + dirName;
-            if (!fs.existsSync(projDir + '/初始文档')) {
-              fs.mkdirSync(projDir + '/初始文档', { recursive: true });
-              fs.mkdirSync(projDir + '/验收文档', { recursive: true });
-            }
-            fs.writeFileSync(projDir + '/analysis_result.json', JSON.stringify(data, null, 2));
-            const oldMd = projDir + '/项目信息.md';
-            if (fs.existsSync(oldMd)) fs.unlinkSync(oldMd);
-            const oldXlsx = projDir + '/前期录入模板.xlsx';
-            if (fs.existsSync(oldXlsx)) fs.unlinkSync(oldXlsx);
-          } catch(e) { console.error('File save error:', e.message); }
+          const d = JSON.parse(b);
+          const ex = await gpApi('GET', '/api/projects/' + p).catch(() => ({}));
+          if (!ex || !ex.id) return res.end(JSON.stringify({ error: 'NotFound' }));
+          const pid = ex.id, pcode = ex.code || p;
 
-          await gpApi("PATCH", "/api/projects/" + projectId, {
-            name: data.projectName || existing.name,
-            description: data.description || '',
-            startDate: data.startDate || null,
-            endDate: data.endDate || null,
-          }).catch(() => {});
-          if (data.tasks && data.tasks.length) {
-            const oldTasks = await gpApi('GET', '/api/projects/' + projectId + '/tasks');
-            if (oldTasks && Array.isArray(oldTasks)) {
-              for (const t of oldTasks) {
-                await gpApi('PATCH', '/api/projects/' + projectId + '/tasks/' + t.id, { title: '[已归档] ' + (t.title||'') }).catch(()=>{});
-              }
-            }
-            const pMap = { '高': 'HIGH', '中': 'MEDIUM', '低': 'LOW' };
-            for (const t of data.tasks) {
-              await gpApi('POST', '/api/projects/' + projectId + '/tasks', {
-                title: t.title || '任务',
-                priority: pMap[t.priority] || 'MEDIUM',
-                dueTime: t.deadline || null,
+          // 1. Update project basic info (name, description)
+          await gpApi('PATCH', '/api/projects/' + pid, { name: d.projectName || ex.name, description: d.description || '' }).catch(() => {});
+
+          // 2. Sync full intake data to NestJS (creates modules, members, updates project fields)
+          await gpApi('POST', '/api/projects/' + pid + '/intake-sync', {
+            projectName: d.projectName,
+            description: d.description,
+            location: d.location,
+            startDate: d.startDate,
+            endDate: d.endDate,
+            modules: d.modules || [],
+            members: d.members || [],
+          }).catch(function(e) { console.log('intake-sync error:', e && e.message || e); });
+
+          // 3. Create tasks (archive old ones first, then create new)
+          if (d.tasks && d.tasks.length) {
+            const old = await gpApi('GET', '/api/projects/' + pid + '/tasks').catch(() => []);
+            if (old && Array.isArray(old)) for (const t of old) await gpApi('PATCH', '/api/projects/' + pid + '/tasks/' + t.id, { title: '[ARCHIVED] ' + (t.title||'') }).catch(() => {});
+            for (const t of d.tasks) await gpApi('POST', '/api/projects/' + pid + '/tasks', { title: t.title || 'Task', priority: ({'高':'HIGH','中':'MEDIUM','低':'LOW'})[t.priority] || 'MEDIUM', dueTime: t.deadline || null }).catch(() => {});
+          }
+
+          // 4. Create events for each task in the intake data (so dashboard shows them)
+          if (d.tasks && d.tasks.length) {
+            for (const t of d.tasks) {
+              await gpApi('POST', '/api/projects/' + pid + '/events', {
+                eventType: 'intake_task',
+                title: t.title || '未命名任务',
+                description: '由 AI 录入分析生成的任务',
+                sourceType: 'manual',
+                sourceChannel: 'intake_confirm',
+                confidence: 0.95,
+                proposedChanges: {
+                  task: {
+                    title: t.title,
+                    priority: ({'高':'HIGH','中':'MEDIUM','低':'LOW'})[t.priority] || 'MEDIUM',
+                    dueTime: t.deadline || null,
+                    ownerName: t.owner || '',
+                  }
+                }
               }).catch(() => {});
             }
           }
-          process.env['intake_' + pid] = JSON.stringify(data);
-          res.end(JSON.stringify({ ok: true, projectId: projectId, projectCode: projectCode }));
-        } catch(e) {
-          res.end(JSON.stringify({ error: e.message }));
-        }
+
+          process.env['intake_' + p] = JSON.stringify(d);
+          process.env['intake_project_' + pcode] = p;
+          process.env['intake_project_' + pid] = p;
+          try {
+            var sd = { nodes: [], edges: [], structureSource: "ai_generated" };
+            if (d.modules && d.modules.length) {
+              // Module nodes in top row
+              sd.nodes = d.modules.map(function(m, i) { return { id:"mod_"+i, type:"module", data:{ title: m.name||m.moduleName||"M"+(i+1), description: m.desc||"", leader: m.leader||"", progress:0, taskCount:0, createdBy:"ai" }, position:{ x:250+(i%3)*300, y:120+Math.floor(i/3)*200 }, parentId: i===0?null:"mod_0" }; });
+              sd.edges = sd.nodes.slice(1).map(function(n) { return { id:"e_"+n.id, source:"mod_0", target:n.id }; });
+            }
+            // Person nodes from members/contacts (second row)
+            var persons = d.members || d.contacts || [];
+            if (persons.length) {
+              persons.forEach(function(p, pi) {
+                var pid = "person_"+pi;
+                var personData = {
+                  name: p.name||p.userName||"成员"+(pi+1),
+                  role: p.role||p.title||"",
+                  avatar: p.avatar||""
+                };
+                sd.nodes.push({
+                  id: pid,
+                  type: "person",
+                  data: personData,
+                  position: { x: 150+(pi%3)*300, y: d.modules&&d.modules.length ? 350+Math.floor(pi/3)*120 : 200+Math.floor(pi/3)*120 },
+                  parentId: null
+                });
+                // Link person to module if their name matches a module's leader
+                if (d.modules&&d.modules.length) {
+                  var leaderName = personData.name;
+                  d.modules.forEach(function(mod, mi) {
+                    var modLeader = (mod.leader||"").trim();
+                    if (modLeader && (modLeader.indexOf(leaderName)!==-1 || leaderName.indexOf(modLeader)!==-1)) {
+                      sd.edges.push({
+                        id: "e_person_"+pid+"_mod_"+mi,
+                        source: pid,
+                        target: "mod_"+mi,
+                        type: "smoothstep",
+                        className: "person-module-edge"
+                      });
+                    }
+                  });
+                }
+              });
+            }
+            process.env["structure_" + pcode] = JSON.stringify(sd);
+          } catch(e) {}
+          res.end(JSON.stringify({ ok: true, projectId: pid, projectCode: pcode }));
+        } catch(e) { res.end(JSON.stringify({ error: e.message })); }
       });
+      return;
+    }
+
+    // GET /intake/:code/analysis
+    if (req.method === 'GET' && parts[0] === 'intake' && parts[1] && parts[2] === 'analysis') {
+      const code = parts[1], pid = process.env['intake_project_' + code] || code, s = process.env['intake_' + pid];
+      if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
+      return res.end(JSON.stringify({ data: null }));
+    }
+
+    // GET /agent/structure/:code
+    if (req.method === 'GET' && parts[0] === 'structure' && parts[1]) {
+      const code = parts[1], s = process.env['structure_' + code];
+      if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
+      return res.end(JSON.stringify({ data: null }));
+    }
+
+    // POST /agent/structure/:code
+    if (req.method === 'POST' && parts[0] === 'structure' && parts[1]) {
+      const code = parts[1]; let b2 = '';
+      req.on('data', c3 => b2 += c3);
+      req.on('end', () => { try { process.env['structure_' + code] = b2; res.end('{"ok":true}'); } catch(e) { res.end(JSON.stringify({error:e.message})); } });
       return;
     }
 

@@ -789,6 +789,85 @@ export class ProjectsService {
     });
   }
 
+  async intakeSync(identifier: string, dto: { projectName?: string; location?: string; startDate?: string; endDate?: string; description?: string; modules?: Array<{ name: string; desc?: string; leader?: string }>; members?: Array<{ name: string; role?: string; title?: string }>; tasks?: Array<{ title: string; owner?: string; deadline?: string; priority?: string }> }) {
+    const projectRecord = await this.resolveProjectByIdentifier(identifier);
+    if (!projectRecord) {
+      throw new NotFoundException('Project not found');
+    }
+    const pid = projectRecord.id;
+    const systemUser = await this.ensureSystemUser();
+
+    // 1. Update project fields
+    const updateData: any = {};
+    if (dto.projectName) updateData.name = dto.projectName;
+    if (dto.description) updateData.description = dto.description;
+    if (dto.location) updateData.location = dto.location;
+    if (dto.startDate) updateData.startDate = new Date(dto.startDate);
+    if (dto.endDate) updateData.endDate = new Date(dto.endDate);
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.project.update({ where: { id: pid }, data: updateData });
+    }
+
+    // 2. Create modules
+    if (dto.modules && dto.modules.length > 0) {
+      for (let i = 0; i < dto.modules.length; i++) {
+        const m = dto.modules[i];
+        if (!m.name) continue;
+        // Check if module already exists by name
+        const existing = await this.prisma.projectModule.findFirst({
+          where: { projectId: pid, name: m.name },
+        });
+        if (!existing) {
+          await this.prisma.projectModule.create({
+            data: {
+              projectId: pid,
+              name: m.name,
+              description: m.desc || '',
+              sortOrder: i + 1,
+              status: 'ACTIVE' as any,
+            },
+          });
+        }
+      }
+    }
+
+    // 3. Create members (find or create users first)
+    if (dto.members && dto.members.length > 0) {
+      for (const m of dto.members) {
+        if (!m.name) continue;
+        // Find or create user
+        let user = await this.prisma.user.findFirst({ where: { name: m.name } });
+        if (!user) {
+          user = await this.prisma.user.create({
+            data: {
+              name: m.name,
+              email: `${m.name.replace(/\s+/g, '-').toLowerCase()}@project.local`,
+              status: 'ACTIVE' as any,
+            },
+          });
+        }
+        // Check if member already exists in project
+        const existingMember = await this.prisma.projectMember.findFirst({
+          where: { projectId: pid, userId: user.id },
+        });
+        if (!existingMember) {
+          const roleMap: Record<string, any> = { '组长': 'LEADER', '管理员': 'ADMIN', '执行人员': 'EXECUTOR', '临时人员': 'TEMP' };
+          const role = roleMap[m.role || ''] || 'EXECUTOR';
+          await this.prisma.projectMember.create({
+            data: {
+              projectId: pid,
+              userId: user.id,
+              role,
+              title: m.title || '',
+            },
+          });
+        }
+      }
+    }
+
+    return { ok: true, projectId: pid };
+  }
+
   async reorderModules(identifier: string, moduleIds: string[]) {
     const project = await this.resolveProjectByIdentifier(identifier);
 
