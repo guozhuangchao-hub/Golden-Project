@@ -2129,25 +2129,7 @@ async function bootstrap() {
       status.textContent = '请先选择一个项目，再进行信息录入。';
       return;
     }
-
-    status.textContent = '正在由本机打开项目对应的 Excel 表格...';
-
-    fetch(`/api/projects/${encodeURIComponent(projectCode)}/intake-workbook/open`, {
-      method: 'POST',
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`intake workbook request failed: ${response.status}`);
-        }
-
-        return response.json();
-      })
-      .then(() => {
-        status.textContent = `已打开项目 ${select.selectedOptions[0]?.textContent || projectCode} 的信息录入 Excel。`;
-      })
-      .catch((error) => {
-        status.textContent = error?.message || '打开信息录入失败，请稍后再试。';
-      });
+    window.location.href = '/agent/intake/' + encodeURIComponent(projectCode);
   });
 
   deleteProjectButton.addEventListener('click', async () => {

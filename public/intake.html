@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golden Project - 项目信息录入</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --cream:#f4efe5;
+  --dark:rgba(28,34,31,0.92);
+  --terracotta:#bf5a36;
+  --gold:#af8d33;
+  --bg:#f4efe5;
+  --text:#1c221f;
+  --text-light:#6b756b;
+  --card-bg:#fffcf5;
+  --border:#d4cec0;
+  --success:#4a7c59;
+  --warn:#c4942b;
+  --danger:#b4433c;
+  --radius:8px;
+  --shadow:0 2px 12px rgba(28,34,31,0.08)
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg);color:var(--text);min-height:100vh
+}
+.nav{
+  background:var(--dark);padding:0 32px;height:52px;
+  display:flex;align-items:center;justify-content:space-between;
+  color:#fff;position:sticky;top:0;z-index:100
+}
+.nav-brand{font-size:18px;font-weight:600;letter-spacing:1px}
+.nav-brand span{color:var(--gold)}
+.nav-links{display:flex;gap:24px;font-size:13px}
+.nav-links a{color:rgba(255,255,255,0.7);text-decoration:none;transition:color .2s}
+.nav-links a:hover,.nav-links a.active{color:#fff}
+.nav-user{font-size:13px;color:rgba(255,255,255,0.6)}
+.container{max-width:1480px;margin:0 auto;padding:16px 24px}
+
+/* Status Bar */
+.status-bar{
+  display:flex;align-items:center;justify-content:center;gap:0;
+  margin-bottom:20px;padding:16px 24px;
+  background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow)
+}
+.status-step{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 16px;border-radius:20px;
+  font-size:13px;font-weight:500;color:var(--text-light);transition:all .3s
+}
+.status-step .step-icon{font-size:16px}
+.status-step.active{background:var(--terracotta);color:#fff}
+.status-step.done{color:var(--success)}
+.status-arrow{color:var(--border);font-size:14px}
+
+/* Main 3-column */
+.main-grid{display:grid;grid-template-columns:260px 1fr 280px;gap:16px;min-height:calc(100vh - 200px)}
+
+/* Panels */
+.panel{background:var(--card-bg);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.panel-header{
+  padding:12px 16px;font-size:14px;font-weight:600;
+  border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px
+}
+.panel-body{padding:16px}
+
+/* Left - Docs */
+.drop-zone{
+  border:2px dashed var(--border);border-radius:var(--radius);
+  padding:32px 16px;text-align:center;cursor:pointer;
+  transition:all .2s;color:var(--text-light);font-size:13px
+}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--terracotta);background:rgba(191,90,54,0.05)}
+.drop-zone-icon{font-size:32px;margin-bottom:8px}
+.drop-zone-text{font-size:12px;color:var(--text-light)}
+.drop-zone-hint{font-size:11px;color:#aaa;margin-top:4px}
+.file-list{margin-top:12px;max-height:340px;overflow-y:auto}
+.file-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 10px;border-radius:6px;background:var(--bg);
+  margin-bottom:6px;font-size:12px;transition:all .2s
+}
+.file-item:hover{background:#e8e4da}
+.file-item .file-info{display:flex;align-items:center;gap:8px;overflow:hidden;flex:1}
+.file-item .file-icon{font-size:14px}
+.file-item .file-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.file-item .file-status{font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.file-status.uploaded{background:#e8f5e9;color:var(--success)}
+.file-status.analyzing{background:#fff3e0;color:var(--warn)}
+.file-status.error{background:#fce4ec;color:var(--danger)}
+.file-status.pending{background:#e3eaf5;color:#4a6fa5}
+.file-del{cursor:pointer;color:var(--danger);font-size:15px;opacity:0.5;transition:opacity .2s;background:none;border:none;padding:2px 4px}
+.file-del:hover{opacity:1}
+
+/* Center Tabs */
+.tab-nav{
+  display:flex;border-bottom:1px solid var(--border);
+  overflow-x:auto;background:var(--card-bg);position:sticky;top:52px;z-index:50
+}
+.tab-btn{
+  padding:10px 14px;font-size:12px;font-weight:500;
+  border:none;background:none;cursor:pointer;
+  color:var(--text-light);border-bottom:2px solid transparent;
+  white-space:nowrap;transition:all .2s;flex-shrink:0
+}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--terracotta);border-bottom-color:var(--terracotta)}
+.tab-content{display:none;padding:16px;animation:fadeIn .25s ease}
+.tab-content.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* Form */
+.form-group{margin-bottom:12px}
+.form-group label{
+  display:block;font-size:12px;font-weight:500;
+  color:var(--text-light);margin-bottom:4px
+}
+.form-input,.form-select,.form-textarea{
+  width:100%;padding:8px 10px;border:1px solid var(--border);
+  border-radius:6px;font-size:13px;background:#fff;
+  color:var(--text);outline:none;transition:border-color .2s
+}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--terracotta)}
+.form-textarea{min-height:72px;resize:vertical;font-family:inherit}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Cards */
+.card-grid{display:grid;gap:10px}
+.card{
+  background:var(--bg);border-radius:var(--radius);padding:14px;
+  border:1px solid var(--border);transition:box-shadow .2s
+}
+.card:hover{box-shadow:0 1px 6px rgba(28,34,31,0.06)}
+.card h4{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.card .card-meta{font-size:11px;color:var(--text-light);margin-bottom:4px}
+.card .card-meta strong{color:var(--text)}
+.card p{font-size:12px;color:var(--text-light);line-height:1.5}
+.card-actions{margin-top:8px;display:flex;gap:6px}
+.card-tag{
+  display:inline-block;padding:1px 8px;border-radius:10px;
+  font-size:10px;background:rgba(191,90,54,0.1);color:var(--terracotta)
+}
+
+/* Table */
+.table-wrap{overflow-x:auto}
+.data-table{
+  width:100%;border-collapse:collapse;font-size:12px
+}
+.data-table th{
+  text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);
+  font-weight:600;color:var(--text-light);white-space:nowrap;font-size:11px
+}
+.data-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:rgba(191,90,54,0.03)}
+.data-table .status-badge{
+  display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500
+}
+.status-badge.confirmed{background:#e8f5e9;color:var(--success)}
+.status-badge.pending{background:#fff3e0;color:var(--warn)}
+.status-badge.cancelled{background:#fce4ec;color:var(--danger)}
+.status-badge.active{background:#e3eaf5;color:#4a6fa5}
+
+/* Timeline */
+.timeline{position:relative;padding-left:24px;margin-bottom:16px}
+.timeline::before{
+  content:'';position:absolute;left:8px;top:6px;bottom:6px;
+  width:2px;background:var(--border)
+}
+.timeline-item{
+  position:relative;padding:8px 0 8px 16px;margin-bottom:4px
+}
+.timeline-item::before{
+  content:'';position:absolute;left:-20px;top:13px;
+  width:10px;height:10px;border-radius:50%;
+  background:var(--terracotta);border:2px solid var(--card-bg)
+}
+.timeline-item .tl-date{font-size:11px;color:var(--text-light)}
+.timeline-item .tl-title{font-size:13px;font-weight:500}
+.timeline-item .tl-detail{font-size:12px;color:var(--text-light);margin-top:2px}
+
+/* Kanban */
+.kanban-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px}
+.kanban-col{
+  min-width:170px;flex:1;background:var(--bg);
+  border-radius:var(--radius);padding:10px
+}
+.kanban-col h5{
+  font-size:12px;font-weight:600;margin-bottom:8px;
+  padding-bottom:6px;border-bottom:2px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between
+}
+.kanban-col .count{
+  background:var(--border);color:var(--text);border-radius:10px;
+  padding:1px 7px;font-size:10px
+}
+.kanban-item{
+  background:#fff;border-radius:6px;padding:10px;
+  margin-bottom:6px;border:1px solid var(--border);
+  font-size:12px;cursor:default;transition:box-shadow .2s
+}
+.kanban-item:hover{box-shadow:0 1px 4px rgba(28,34,31,0.08)}
+.kanban-item .kb-title{font-weight:500;margin-bottom:4px}
+.kanban-item .kb-meta{font-size:11px;color:var(--text-light)}
+.kanban-item .kb-meta span{margin-right:8px}
+.priority-tag{
+  display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:500
+}
+.priority-high{background:#fce4ec;color:var(--danger)}
+.priority-medium{background:#fff3e0;color:var(--warn)}
+.priority-low{background:#e8f5e9;color:var(--success)}
+
+/* Risk cards */
+.risk-card{
+  background:#fff;border-radius:var(--radius);padding:12px 14px;
+  margin-bottom:8px;border:1px solid var(--border);border-left:4px solid var(--warn);
+  transition:box-shadow .2s
+}
+.risk-card:hover{box-shadow:0 1px 6px rgba(28,34,31,0.06)}
+.risk-card h5{font-size:13px;font-weight:600;margin-bottom:4px}
+.risk-card .risk-meta{font-size:11px;color:var(--text-light);margin-bottom:4px}
+.risk-card .risk-detail{font-size:12px;line-height:1.5}
+.risk-card.risk-high{border-left-color:var(--danger)}
+.risk-card.risk-medium{border-left-color:var(--warn)}
+.risk-card.risk-low{border-left-color:var(--success)}
+.risk-badge{
+  display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:500;margin-right:4px
+}
+
+/* Right panel */
+.right-section{margin-bottom:16px}
+.right-section-title{
+  font-size:12px;font-weight:600;color:var(--text-light);
+  margin-bottom:8px;padding-bottom:4px;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between
+}
+.right-section-title .count-badge{
+  background:var(--terracotta);color:#fff;border-radius:10px;
+  padding:1px 7px;font-size:10px
+}
+.conflict-item{
+  font-size:12px;padding:8px 10px;margin-bottom:6px;
+  border-radius:6px;background:#fff8e1;
+  border-left:3px solid var(--warn)
+}
+.conflict-item.conflict-error{background:#fce4ec;border-left-color:var(--danger)}
+.conflict-item.conflict-ok{background:#e8f5e9;border-left-color:var(--success)}
+.conflict-item .conflict-title{font-weight:500;margin-bottom:2px}
+.conflict-item .conflict-desc{font-size:11px;color:var(--text-light)}
+.summary-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:5px 0;font-size:12px;border-bottom:1px dotted var(--border)
+}
+.summary-row:last-child{border-bottom:none}
+.summary-row .label{color:var(--text-light)}
+.summary-row .value{font-weight:500}
+
+/* Bottom bar */
+.bottom-bar{
+  margin-top:16px;display:flex;justify-content:flex-end;gap:12px;
+  padding:16px 24px;background:var(--card-bg);
+  border-radius:var(--radius);box-shadow:var(--shadow)
+}
+.btn{
+  padding:10px 28px;border:none;border-radius:6px;
+  font-size:14px;font-weight:500;cursor:pointer;
+  transition:all .2s;display:flex;align-items:center;gap:6px
+}
+.btn-outline{
+  background:transparent;border:1px solid var(--border);color:var(--text)
+}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold)}
+.btn-primary{background:var(--terracotta);color:#fff}
+.btn-primary:hover{background:#a84e2e}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-gold:hover{background:#967a2b}
+.btn:active{transform:scale(0.97)}
+
+/* Sub tabs */
+.sub-tab-nav{display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)}
+.sub-tab-btn{
+  padding:6px 18px;font-size:12px;font-weight:500;
+  border:none;background:none;cursor:pointer;
+  color:var(--text-light);border-bottom:2px solid transparent;transition:all .2s
+}
+.sub-tab-btn:hover{color:var(--text)}
+.sub-tab-btn.active{color:var(--terracotta);border-bottom-color:var(--terracotta)}
+.sub-tab-content{display:none}
+.sub-tab-content.active{display:block}
+
+/* Analysis */
+.analysis-section{margin-bottom:16px}
+.analysis-section h4{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--terracotta)}
+.analysis-section .analysis-body{
+  font-size:12px;line-height:1.7;color:var(--text);background:var(--bg);
+  padding:12px;border-radius:6px;border:1px solid var(--border);
+  white-space:pre-wrap
+}
+.analysis-list{list-style:none;padding:0}
+.analysis-list li{
+  font-size:12px;padding:6px 0 6px 16px;position:relative;border-bottom:1px dotted var(--border)
+}
+.analysis-list li::before{content:'→';position:absolute;left:0;color:var(--terracotta)}
+
+/* Misc */
+.section-title{margin-bottom:10px;font-size:14px;font-weight:600}
+.badge{
+  display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500
+}
+.text-muted{color:var(--text-light);font-size:12px}
+.mt-8{margin-top:8px}
+.mb-8{margin-bottom:8px}
+.flex-center{display:flex;align-items:center;gap:6px}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:24px;right:24px;padding:12px 20px;
+  border-radius:var(--radius);color:#fff;font-size:13px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.2);z-index:999;
+  transform:translateY(80px);opacity:0;transition:all .3s ease
+}
+.toast.show{transform:translateY(0);opacity:1}
+.toast-success{background:var(--success)}
+.toast-error{background:var(--danger)}
+.toast-info{background:#4a6fa5}
+
+/* Responsive */
+@media(max-width:1200px){
+  .main-grid{grid-template-columns:220px 1fr 240px}
+}
+@media(max-width:1024px){
+  .main-grid{grid-template-columns:1fr;gap:12px}
+  .container{padding:14px}
+  .status-bar{flex-wrap:wrap;gap:4px;justify-content:center}
+  .status-step{font-size:11px;padding:4px 10px}
+  .status-arrow{display:none}
+}
+@media(max-width:768px){
+  .container{padding:10px}
+  .nav{padding:0 12px}
+  .nav-links{display:none}
+  .kanban-row{flex-direction:column}
+  .form-row{grid-template-columns:1fr}
+  .tab-btn{padding:8px 10px;font-size:11px}
+  .bottom-bar{flex-direction:column;align-items:stretch}
+  .bottom-bar .btn{justify-content:center}
+}
+@media(max-width:480px){
+  .status-step{padding:3px 8px;font-size:10px}
+  .drop-zone{padding:20px 12px}
+}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#b8b2a4}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand">GOLDEN <span>PROJECT</span></div>
+  <div class="nav-links">
+    <a href="/console/dashboard">← 返回 Dashboard</a>
+  </div>
+  <div class="nav-user">管理员</div>
+</nav>
+
+<div class="container">
+
+<!-- Status Bar -->
+<div class="status-bar">
+  <div class="status-step active"><span class="step-icon">📄</span> 上传文档</div>
+  <span class="status-arrow">→</span>
+  <div class="status-step"><span class="step-icon">🔍</span> Hermes分析</div>
+  <span class="status-arrow">→</span>
+  <div class="status-step"><span class="step-icon">✅</span> 人工确认</div>
+  <span class="status-arrow">→</span>
+  <div class="status-step"><span class="step-icon">🚀</span> 生成项目</div>
+</div>
+
+<!-- Main 3-column -->
+<div class="main-grid">
+
+<!-- LEFT: Document Area -->
+<div class="panel">
+  <div class="panel-header">📎 文档管理</div>
+  <div class="panel-body">
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-zone-icon">📁</div>
+      <div class="drop-zone-text">拖拽文件到此区域上传</div>
+      <div class="drop-zone-hint">支持 PDF, DOCX, XLSX, PPTX, TXT</div>
+      <input type="file" id="fileInput" multiple accept=".pdf,.docx,.xlsx,.pptx,.txt" style="display:none">
+    </div>
+    <div class="file-list" id="fileList"></div>
+    <button class="btn btn-primary" id="startAnalyzeBtn" style="width:100%;margin-top:12px;">🚀 开始分析</button>
+  </div>
+</div>
+
+<!-- CENTER: 8 Tabs -->
+<div class="panel" style="overflow:visible">
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="0">① 项目概览</button>
+    <button class="tab-btn" data-tab="1">② 模块与流程</button>
+    <button class="tab-btn" data-tab="2">③ 活动日程</button>
+    <button class="tab-btn" data-tab="3">④ 人员与单位</button>
+    <button class="tab-btn" data-tab="4">⑤ 场地资源</button>
+    <button class="tab-btn" data-tab="5">⑥ 任务清单</button>
+    <button class="tab-btn" data-tab="6">⑦ 风险事项</button>
+    <button class="tab-btn" data-tab="7">⑧ Hermes分析</button>
+  </div>
+
+  <!-- Tab 0: 项目概览 -->
+  <div class="tab-content active" id="tab-0">
+    <div class="section-title">项目基本信息</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>项目名称</label>
+        <input class="form-input" id="f-projectName" value="">
+      </div>
+      <div class="form-group">
+        <label>项目简称</label>
+        <input class="form-input" id="f-shortName" value="">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>项目编码</label>
+        <input class="form-input" id="f-projectCode" value="">
+      </div>
+      <div class="form-group">
+        <label>项目类型</label>
+        <select class="form-select" id="f-projectType">
+          <option>展览</option>
+          <option>会议</option>
+          <option>演出</option>
+          <option>赛事</option>
+          <option>发布会</option>
+          <option>庆典</option>
+          <option>其他</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>开始日期</label>
+        <input class="form-input" id="f-startDate" type="date">
+      </div>
+      <div class="form-group">
+        <label>结束日期</label>
+        <input class="form-input" id="f-endDate" type="date">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>项目描述</label>
+      <textarea class="form-textarea" id="f-description"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>主办单位</label>
+        <input class="form-input" id="f-organizer" value="">
+      </div>
+      <div class="form-group">
+        <label>执行单位</label>
+        <input class="form-input" id="f-executor" value="">
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 1: 模块与流程 -->
+  <div class="tab-content" id="tab-1">
+    <div class="section-title">项目模块与流程</div>
+    <div class="card-grid" id="modulesContainer"></div>
+  </div>
+
+  <!-- Tab 2: 活动日程 -->
+  <div class="tab-content" id="tab-2">
+    <div class="section-title">活动日程时间线</div>
+    <div class="timeline" id="timelineContainer"></div>
+    <div class="section-title mt-8">日程明细</div>
+    <div class="table-wrap">
+      <table class="data-table" id="activitiesTable">
+        <thead><tr>
+          <th>活动名称</th><th>日期</th><th>时间</th><th>场地</th><th>所属模块</th><th>负责人</th><th>状态</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab 3: 人员与单位 -->
+  <div class="tab-content" id="tab-3">
+    <div class="sub-tab-nav">
+      <button class="sub-tab-btn active" data-subtab="0">联系人</button>
+      <button class="sub-tab-btn" data-subtab="1">供应商</button>
+    </div>
+    <div class="sub-tab-content active" id="subtab-0">
+      <div class="table-wrap">
+        <table class="data-table" id="contactsTable">
+          <thead><tr>
+            <th>单位</th><th>角色</th><th>姓名</th><th>手机</th><th>飞书ID</th><th>事由</th><th>重要程度</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sub-tab-content" id="subtab-1">
+      <div class="table-wrap">
+        <table class="data-table" id="vendorsTable">
+          <thead><tr>
+            <th>供应商</th><th>服务内容</th><th>联系人</th><th>电话</th><th>合同状态</th><th>负责人</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 4: 场地资源 -->
+  <div class="tab-content" id="tab-4">
+    <div class="section-title">场地资源列表</div>
+    <div class="table-wrap">
+      <table class="data-table" id="venuesTable">
+        <thead><tr>
+          <th>场地名称</th><th>用途</th><th>关联活动</th><th>归属单位</th><th>对接人</th><th>电话</th><th>状态</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab 5: 任务清单 -->
+  <div class="tab-content" id="tab-5">
+    <div class="section-title">任务看板</div>
+    <div class="kanban-row" id="kanbanContainer"></div>
+  </div>
+
+  <!-- Tab 6: 风险事项 -->
+  <div class="tab-content" id="tab-6">
+    <div class="section-title">风险事项列表</div>
+    <div id="risksContainer"></div>
+  </div>
+
+  <!-- Tab 7: Hermes分析 -->
+  <div class="tab-content" id="tab-7">
+    <div id="analysisContainer"></div>
+  </div>
+</div>
+
+<!-- RIGHT: Conflicts / Summary -->
+<div class="panel">
+  <div class="panel-header">📋 项目摘要</div>
+  <div class="panel-body">
+    <div class="right-section">
+      <div class="right-section-title">
+        ⏳ 待确认事项
+        <span class="count-badge" id="pendingCount">0</span>
+      </div>
+      <div id="pendingList"></div>
+    </div>
+    <div class="right-section">
+      <div class="right-section-title">
+        ⚠️ 冲突提醒
+        <span class="count-badge" id="conflictCount" style="background:var(--danger)">0</span>
+      </div>
+      <div id="conflictList"></div>
+    </div>
+    <div class="right-section">
+      <div class="right-section-title">📊 生成预览摘要</div>
+      <div id="previewSummary"></div>
+    </div>
+  </div>
+</div>
+</div><!-- /main-grid -->
+
+<!-- Bottom Bar -->
+<div class="bottom-bar">
+  <button class="btn btn-outline" onclick="saveDraft()">💾 保存草稿</button>
+  <button class="btn btn-gold" onclick="confirmProject()">🚀 确认生成项目</button>
+</div>
+
+</div><!-- /container -->
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== TOKEN CHECK =====
+(function(){
+  const token = localStorage.getItem('gp_token') || sessionStorage.getItem('gp_token');
+  if(!token){ window.location.href = '/agent/login'; }
+})();
+
+// ===== EMPTY DATA =====
+const intakeData = {
+  projectName: '', shortName: '', projectCode: '', projectType: '',
+  startDate: '', endDate: '', description: '', organizer: '', executor: '',
+  modules: [], activities: [], contacts: [], vendors: [], venues: [],
+  tasks: [], risks: [], analysis: {structure: '', risks: [], suggestions: []}
+};
+
+// ===== STATE =====
+let currentTab = 0;
+let currentSubTab = 0;
+let uploadedFiles = [];
+
+// ===== RENDER FUNCTIONS =====
+
+function populateForm(){
+  const d = intakeData;
+  document.getElementById('f-projectName').value = d.projectName || '';
+  document.getElementById('f-shortName').value = d.shortName || '';
+  document.getElementById('f-projectCode').value = d.projectCode || '';
+  document.getElementById('f-projectType').value = d.projectType || '会议';
+  document.getElementById('f-startDate').value = d.startDate || '';
+  document.getElementById('f-endDate').value = d.endDate || '';
+  document.getElementById('f-description').value = d.description || '';
+  document.getElementById('f-organizer').value = d.organizer || '';
+  document.getElementById('f-executor').value = d.executor || '';
+}
+
+function renderModules(){
+  const c = document.getElementById('modulesContainer');
+  c.innerHTML = intakeData.modules.map((m,i) =>
+    `<div class="card">
+      <h4>${m.name} <span class="card-tag">模块${i+1}</span></h4>
+      <div class="card-meta"><strong>负责人：</strong>${m.leader}</div>
+      <p>${m.desc}</p>
+      <div class="card-actions">
+        <input class="form-input" style="font-size:11px;flex:1" value="${m.leader}" placeholder="负责人">
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:11px" onclick="showToast('模块信息已更新','info')">更新</button>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function renderTimeline(){
+  const c = document.getElementById('timelineContainer');
+  const sorted = [...intakeData.activities].sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  c.innerHTML = sorted.map(a =>
+    `<div class="timeline-item">
+      <div class="tl-date">${a.date} ${a.time}</div>
+      <div class="tl-title">${a.name}</div>
+      <div class="tl-detail">${a.venue} · ${a.leader}${a.assistant?' · 协助:'+a.assistant:''} <span class="status-badge ${a.status}">${a.status==='confirmed'?'已确认':'待确认'}</span></div>
+    </div>`
+  ).join('');
+}
+
+function renderActivitiesTable(){
+  const tbody = document.querySelector('#activitiesTable tbody');
+  tbody.innerHTML = intakeData.activities.map(a =>
+    `<tr>
+      <td>${a.name}</td><td>${a.date}</td><td>${a.time}</td>
+      <td>${a.venue}</td><td>${a.module}</td><td>${a.leader}</td>
+      <td><span class="status-badge ${a.status}">${a.status==='confirmed'?'已确认':'待确认'}</span></td>
+    </tr>`
+  ).join('');
+}
+
+function renderContacts(){
+  const tbody = document.querySelector('#contactsTable tbody');
+  const levels = {核心:'核心',重要:'重要',一般:'一般'};
+  tbody.innerHTML = intakeData.contacts.map(c =>
+    `<tr>
+      <td>${c.org}</td><td>${c.role}</td><td>${c.name}</td>
+      <td>${c.mobile}</td><td>${c.feishuId}</td><td>${c.matter}</td>
+      <td><span class="status-badge ${c.level==='核心'?'active':c.level==='重要'?'confirmed':'pending'}">${c.level}</span></td>
+    </tr>`
+  ).join('');
+}
+
+function renderVendors(){
+  const tbody = document.querySelector('#vendorsTable tbody');
+  const statuses = {已签约:'confirmed',洽谈中:'pending',意向阶段:'pending'};
+  tbody.innerHTML = intakeData.vendors.map(v =>
+    `<tr>
+      <td>${v.name}</td><td>${v.service}</td><td>${v.contact}</td>
+      <td>${v.phone}</td>
+      <td><span class="status-badge ${statuses[v.contractStatus]||'pending'}">${v.contractStatus}</span></td>
+      <td>${v.manager}</td>
+    </tr>`
+  ).join('');
+}
+
+function renderVenues(){
+  const tbody = document.querySelector('#venuesTable tbody');
+  tbody.innerHTML = intakeData.venues.map(v =>
+    `<tr>
+      <td>${v.name}</td><td>${v.purpose}</td><td>${v.activity}</td>
+      <td>${v.org}</td><td>${v.leader}</td><td>${v.phone}</td>
+      <td><span class="status-badge ${v.status==='已确认'?'confirmed':'pending'}">${v.status}</span></td>
+    </tr>`
+  ).join('');
+}
+
+function renderKanban(){
+  const statusMap = {
+    pending: '待确认',
+    in_progress: '进行中',
+    collaborating: '协作中',
+    completed: '已完成',
+    at_risk: '有风险'
+  };
+  const cols = ['pending','in_progress','collaborating','completed','at_risk'];
+  const c = document.getElementById('kanbanContainer');
+  c.innerHTML = cols.map(key => {
+    const items = intakeData.tasks.filter(t => t.status === key);
+    const priorityMap = {高:'priority-high',中:'priority-medium',低:'priority-low'};
+    return `<div class="kanban-col">
+      <h5>${statusMap[key]} <span class="count">${items.length}</span></h5>
+      ${items.map(t => `
+        <div class="kanban-item">
+          <div class="kb-title">${t.title}</div>
+          <div class="kb-meta">
+            <span>👤 ${t.owner}</span>
+            <span>📅 ${t.deadline}</span>
+            <span class="priority-tag ${priorityMap[t.priority]}">${t.priority}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:2px">${t.module}</div>
+        </div>`
+      ).join('')}
+    </div>`;
+  }).join('');
+}
+
+function renderRisks(){
+  const c = document.getElementById('risksContainer');
+  const probColors = {高:'risk-high',中:'risk-medium',低:'risk-low'};
+  const probBadge = {高:'priority-high',中:'priority-medium',低:'priority-low'};
+  c.innerHTML = intakeData.risks.map(r =>
+    `<div class="risk-card ${probColors[r.probability]||'risk-medium'}">
+      <h5>${r.name} <span class="risk-badge ${probBadge[r.probability]}">${r.probability}概率</span><span class="risk-badge ${probBadge[r.impact]}">${r.impact}影响</span></h5>
+      <div class="risk-meta"><strong>所属模块：</strong>${r.module} · <strong>负责人：</strong>${r.owner} · <strong>截止：</strong>${r.deadline}</div>
+      <div class="risk-detail"><strong>应对计划：</strong>${r.plan}</div>
+      <div style="margin-top:6px;display:flex;gap:6px">
+        <input class="form-input" style="font-size:11px;flex:1" value="${r.plan}" placeholder="更新应对计划">
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:11px" onclick="showToast('风险信息已更新','info')">更新</button>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function renderAnalysis(){
+  const a = intakeData.analysis;
+  const c = document.getElementById('analysisContainer');
+  c.innerHTML = `
+    <div class="analysis-section">
+      <h4>📐 项目结构理解</h4>
+      <div class="analysis-body">${a.structure}</div>
+    </div>
+    <div class="analysis-section">
+      <h4>⚠️ 识别风险 (${a.risks.length})</h4>
+      <ul class="analysis-list">
+        ${a.risks.map(r => `<li>${r}</li>`).join('')}
+      </ul>
+    </div>
+    <div class="analysis-section">
+      <h4>💡 优化建议 (${a.suggestions.length})</h4>
+      <ul class="analysis-list">
+        ${a.suggestions.map(s => `<li>${s}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+function renderRightPanel(){
+  const d = intakeData;
+  // Pending items from actual data
+  const pendingItems = [];
+  d.tasks.filter(t => t.status === 'pending').forEach(t => pendingItems.push(t.title + ' (待确认)'));
+  d.venues.filter(v => v.status === '待确认').forEach(v => pendingItems.push(v.name + '场地状态待确认'));
+  d.vendors.filter(v => v.contractStatus !== '已签约').forEach(v => pendingItems.push(v.name + '供应商合同待签约 (' + v.contractStatus + ')'));
+  d.risks.filter(r => r.probability === '高').forEach(r => pendingItems.push(r.name + ' (' + r.probability + '风险)'));
+
+  document.getElementById('pendingCount').textContent = pendingItems.length || '0';
+  document.getElementById('pendingList').innerHTML = pendingItems.length
+    ? pendingItems.map(p => `<div class="conflict-item"><div class="conflict-title">⏳ ${p}</div></div>`).join('')
+    : '<div class="text-muted" style="padding:12px;text-align:center">暂无待确认事项</div>';
+
+  // Conflicts from actual risks
+  const conflicts = d.risks.slice(0, 5).map(r => ({
+    type: r.probability === '高' ? 'error' : r.probability === '中' ? 'warn' : 'ok',
+    title: r.name,
+    desc: r.plan ? '应对: ' + r.plan.slice(0, 40) + (r.plan.length > 40 ? '...' : '') : '暂无应对预案'
+  }));
+  if (!conflicts.length) conflicts.push({type:'ok', title:'暂无风险冲突', desc:'所有模块正常推进中'});
+
+  document.getElementById('conflictCount').textContent = conflicts.filter(c => c.type !== 'ok').length;
+  document.getElementById('conflictList').innerHTML = conflicts.map(c =>
+    `<div class="conflict-item ${c.type==='error'?'conflict-error':c.type==='ok'?'conflict-ok':''}">
+      <div class="conflict-title">${c.type==='error'?'🔴':c.type==='ok'?'🟢':'🟡'} ${c.title}</div>
+      <div class="conflict-desc">${c.desc}</div>
+    </div>`
+  ).join('');
+
+  // Preview summary
+  document.getElementById('previewSummary').innerHTML = `
+    <div class="summary-row"><span class="label">项目名称</span><span class="value">${d.projectName || '-'}</span></div>
+    <div class="summary-row"><span class="label">项目编码</span><span class="value">${d.projectCode || '-'}</span></div>
+    <div class="summary-row"><span class="label">项目类型</span><span class="value">${d.projectType || '-'}</span></div>
+    <div class="summary-row"><span class="label">活动数量</span><span class="value">${d.activities.length}</span></div>
+    <div class="summary-row"><span class="label">模块数量</span><span class="value">${d.modules.length}</span></div>
+    <div class="summary-row"><span class="label">联系人</span><span class="value">${d.contacts.length}</span></div>
+    <div class="summary-row"><span class="label">供应商</span><span class="value">${d.vendors.length}</span></div>
+    <div class="summary-row"><span class="label">场地</span><span class="value">${d.venues.length}</span></div>
+    <div class="summary-row"><span class="label">任务总数</span><span class="value">${d.tasks.length}</span></div>
+    <div class="summary-row"><span class="label">风险事项</span><span class="value">${d.risks.length}</span></div>
+    <div class="summary-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+      <span class="label">项目周期</span>
+      <span class="value">${d.startDate || '-'} ~ ${d.endDate || '-'}</span>
+    </div>
+  `;
+}
+
+// ===== TAB SWITCHING =====
+function initTabs(){
+  const btns = document.querySelectorAll('.tab-btn');
+  btns.forEach(btn => {
+    btn.addEventListener('click', function(){
+      currentTab = parseInt(this.dataset.tab);
+      btns.forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + currentTab).classList.add('active');
+    });
+  });
+}
+
+function initSubTabs(){
+  const btns = document.querySelectorAll('.sub-tab-btn');
+  btns.forEach(btn => {
+    btn.addEventListener('click', function(){
+      currentSubTab = parseInt(this.dataset.subtab);
+      btns.forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      document.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('subtab-' + currentSubTab).classList.add('active');
+    });
+  });
+}
+
+// ===== FILE UPLOAD =====
+function initFileUpload(){
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  fileInput.addEventListener('change', () => {
+    handleFiles(fileInput.files);
+    fileInput.value = '';
+  });
+}
+
+function handleFiles(files){
+  var realFiles = [];
+  for(var i = 0; i < files.length; i++){
+    var f = files[i];
+    var ext = f.name.split('.').pop().toLowerCase();
+    if(!['pdf','docx','xlsx','pptx','txt'].includes(ext)){
+      showToast('不支持的文件格式: .' + ext, 'error');
+      continue;
+    }
+    uploadedFiles.push({name: f.name, size: f.size, status: 'uploaded', file: f});
+    realFiles.push(f);
+  }
+  renderFileList();
+  if(realFiles.length) showToast('已添加 ' + realFiles.length + ' 个文件', 'success');
+}
+
+function renderFileList(){
+  const c = document.getElementById('fileList');
+  if(uploadedFiles.length === 0){
+    c.innerHTML = '<div class="text-muted" style="text-align:center;padding:12px">暂无上传文件</div>';
+    return;
+  }
+  c.innerHTML = uploadedFiles.map((f,i) => {
+    const icons = {pdf:'📕',docx:'📘',xlsx:'📗',pptx:'📙',txt:'📄'};
+    const ext = f.name.split('.').pop().toLowerCase();
+    const icon = icons[ext] || '📄';
+    return `<div class="file-item">
+      <div class="file-info">
+        <span class="file-icon">${icon}</span>
+        <span class="file-name" title="${f.name}">${f.name}</span>
+        <span class="file-status ${f.status}">${f.status==='uploaded'?'已上传':f.status==='analyzing'?'分析中':f.status==='error'?'失败':'待处理'}</span>
+      </div>
+      <button class="file-del" onclick="removeFile(${i})" title="删除">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function removeFile(idx){
+  uploadedFiles.splice(idx, 1);
+  renderFileList();
+}
+
+// ===== ACTIONS (replaced by server-sync versions below) =====
+// ===== TOAST =====
+function showToast(msg, type){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + (type || 'info') + ' show';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ===== INIT =====
+// ===== API CONFIG =====
+const PROJECT_ID = '{{PROJECT_ID}}';
+const API_BASE = '{{API_BASE}}';
+function getToken(){ return localStorage.getItem('gp_token') || sessionStorage.getItem('gp_token'); }
+
+// ===== ANALYZE =====
+function startAnalyze(){
+  var btn = document.getElementById('startAnalyzeBtn');
+  if(!uploadedFiles.length){ showToast('请先上传文件', 'error'); return; }
+  btn.disabled = true; btn.textContent = '分析中...';
+  updateStatusBar(1);
+
+  var reader = new FileReader();
+  var idx = 0, allData = [], token = getToken();
+
+  function uploadNext(){
+    if(idx >= uploadedFiles.length){
+      fetch(API_BASE + '/intake/' + PROJECT_ID + '/analyze', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body:JSON.stringify({files:allData})
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        btn.disabled = false; btn.textContent = '开始分析';
+        if(d.error){ showToast('分析失败: '+d.error, 'error'); updateStatusBar(0); return; }
+        Object.assign(intakeData, d.data);
+        rerenderAll();
+        updateStatusBar(2);
+        showToast('分析完成！请核对并编辑内容', 'success');
+      })
+      .catch(function(e){
+        btn.disabled = false; btn.textContent = '开始分析';
+        showToast('分析失败: '+e.message, 'error');
+        updateStatusBar(0);
+      });
+      return;
+    }
+    var f = uploadedFiles[idx];
+    reader.onload = function(e){
+      allData.push({name:f.name, content:e.target.result.split(',')[1], type:f.type});
+      uploadedFiles[idx].status = 'analyzing';
+      renderFileList();
+      idx++;
+      uploadNext();
+    };
+    reader.readAsDataURL(f.file);
+  }
+  uploadNext();
+}
+
+// ===== SAVE =====
+function saveDraft(){
+  collectFormData();
+  fetch(API_BASE + '/intake/' + PROJECT_ID + '/data', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
+    body:JSON.stringify(intakeData)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.error) showToast('保存失败: '+d.error, 'error');
+    else {
+      showToast('✅ 草稿已保存！', 'success');
+      rerenderAll();
+    }
+  })
+  .catch(function(e){ showToast('保存失败: '+e.message, 'error'); });
+}
+
+function confirmProject(){
+  collectFormData();
+  fetch(API_BASE + '/intake/' + PROJECT_ID + '/confirm', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getToken()},
+    body:JSON.stringify(intakeData)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.error) showToast('确认失败: '+d.error, 'error');
+    else { showToast('✅ 项目已生成！跳转中...', 'success');
+      setTimeout(function(){ window.location.href = '/console/structure?projectCode=' + encodeURIComponent(d.projectCode || intakeData.projectCode); }, 1500); }
+  })
+  .catch(function(e){ showToast('确认失败: '+e.message, 'error'); });
+}
+
+function collectFormData(){
+  intakeData.projectName = (document.getElementById('f-projectName')||{}).value || '';
+  intakeData.shortName = (document.getElementById('f-shortName')||{}).value || '';
+  intakeData.projectCode = (document.getElementById('f-projectCode')||{}).value || '';
+  intakeData.projectType = (document.getElementById('f-projectType')||{}).value || '';
+  intakeData.startDate = (document.getElementById('f-startDate')||{}).value || '';
+  intakeData.endDate = (document.getElementById('f-endDate')||{}).value || '';
+  intakeData.description = (document.getElementById('f-description')||{}).value || '';
+  intakeData.organizer = (document.getElementById('f-organizer')||{}).value || '';
+  intakeData.executor = (document.getElementById('f-executor')||{}).value || '';
+}
+
+function rerenderAll(){
+  populateForm(); renderModules(); renderTimeline(); renderActivitiesTable();
+  renderContacts(); renderVendors(); renderVenues(); renderKanban();
+  renderRisks(); renderAnalysis(); renderRightPanel();
+}
+
+function updateStatusBar(step){
+  var steps = document.querySelectorAll('.status-step');
+  steps.forEach(function(s,i){ s.classList.toggle('active', i <= step); });
+  steps[step] && (steps[step].querySelector('.step-icon').textContent = '✓');
+}
+
+// ===== LOAD EXISTING DATA =====
+function loadIntakeData(){
+  fetch(API_BASE + '/intake/' + PROJECT_ID + '/data', {
+    method:'GET',
+    headers:{'Authorization':'Bearer '+getToken()}
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d && d.data){
+      Object.assign(intakeData, d.data);
+      rerenderAll();
+    }
+  })
+  .catch(function(){});
+}
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', function(){
+  loadIntakeData();
+  populateForm();
+  renderModules();
+  renderTimeline();
+  renderActivitiesTable();
+  renderContacts();
+  renderVendors();
+  renderVenues();
+  renderKanban();
+  renderRisks();
+  renderAnalysis();
+  renderRightPanel();
+  renderFileList();
+  initTabs();
+  initSubTabs();
+  initFileUpload();
+  // Wire analyze button
+  var ab = document.getElementById('startAnalyzeBtn');
+  if(ab) ab.onclick = startAnalyze;
+});
+</script>
+</body>
+</html>

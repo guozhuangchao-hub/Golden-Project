@@ -1,6 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
+  <head><script>
+(function() {
+  var token = localStorage.getItem('gp_token');
+  if (!token) {
+    window.location.href = '/agent/login';
+  }
+})();
+</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golden Project Dashboard</title>
@@ -16,6 +23,22 @@
     </script>
   </head>
   <body>
+  <nav style="display:flex;align-items:center;justify-content:space-between;padding:8px 20px;background:#1e293b;border-bottom:1px solid #334155;font-size:13px;">
+  <span style="color:#94a3b8;" id="navUserLbl"></span>
+  <div>
+    <a href="/agent/account" style="color:#60a5fa;text-decoration:none;margin-right:16px;">账号管理</a>
+    <a href="/agent/login" onclick="localStorage.clear();" style="color:#ef4444;text-decoration:none;">登出</a>
+  </div>
+</nav>
+<script>
+(function(){
+  try {
+    var u = JSON.parse(localStorage.getItem('gp_user') || '{}');
+    if (u.name) document.getElementById('navUserLbl').textContent = u.name;
+  } catch(e) {}
+})();
+</script>
+
     <main class="shell">
       <section class="hero">
         <div class="hero-top">
