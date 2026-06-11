@@ -91,6 +91,33 @@ module.exports = {
     return request({ url: `/mini/project/${encodeURIComponent(projectCode)}/contacts` });
   },
 
+  fetchIdentityPool() {
+    const projectCode = requireProjectCode();
+    const memberId = app.globalData.memberId;
+    const query = memberId ? `?memberId=${encodeURIComponent(memberId)}` : '';
+    return request({ url: `/mini/project/${encodeURIComponent(projectCode)}/identity-pool${query}` });
+  },
+
+  claimIdentity(nodeId) {
+    const projectCode = requireProjectCode();
+    const memberId = requireMemberId();
+    return request({
+      url: `/mini/project/${encodeURIComponent(projectCode)}/identity-claim`,
+      method: 'POST',
+      data: { memberId, nodeId }
+    });
+  },
+
+  releaseIdentity(nodeId) {
+    const projectCode = requireProjectCode();
+    const memberId = app.globalData.memberId;
+    return request({
+      url: `/mini/project/${encodeURIComponent(projectCode)}/identity-release`,
+      method: 'POST',
+      data: { memberId, nodeId }
+    });
+  },
+
   confirmTask(taskId, content) {
     const memberId = requireMemberId();
     return request({

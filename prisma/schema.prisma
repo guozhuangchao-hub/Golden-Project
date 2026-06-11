@@ -242,10 +242,24 @@ model Project {
   events              Event[]
   messageSignals      MessageSignal[]
   riskItems           RiskItem[]
+  runtimeState        ProjectRuntimeState?
 
   @@index([status])
   @@index([startDate, endDate])
   @@map("projects")
+}
+
+model ProjectRuntimeState {
+  id             String   @id @default(cuid())
+  projectId      String   @unique @map("project_id")
+  structureTree  Json?    @map("structure_tree")
+  identityClaims Json?    @map("identity_claims")
+  intakeSnapshot Json?    @map("intake_snapshot")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_runtime_states")
 }
 
 model ProjectModule {

@@ -1150,154 +1150,43 @@ function render(data) {
 
   document.querySelector('#members').innerHTML = (() => {
     const members = data.project?.members || [];
-    // Distinguish intake-sourced (project personnel) vs wechat miniprogram (temporary)
-    // TEMP role members are from wechat miniprogram; others are from intake
-    const projectPersonnel = members.filter((m) => m.role !== 'TEMP');
-    const tempPersonnel = members.filter((m) => m.role === 'TEMP');
-
-    const renderPerson = (member) => {
-      const name = getMemberName(member);
-      const role = roleNameMap[member.role] || member.role || '成员';
-      const org = member.title || member.department || '--';
-      return `
-        <article class="overview-detail-item people" style="margin-bottom:0;">
-          <div class="overview-detail-avatar">${escapeHtml(getInitials(name))}</div>
-          <div>
-            <div class="overview-detail-item-head inline">
-              <h4>${escapeHtml(name)}</h4>
-              <span class="overview-detail-status">${escapeHtml(role)}</span>
-            </div>
-            <p style="margin:2px 0 0;font-size:12px;">${escapeHtml(org)}</p>
-          </div>
-        </article>
-      `;
-    };
-
-    const parts = [];
-    if (projectPersonnel.length) {
-      parts.push(`
-        <div style="grid-column:1/-1;">
-          <div style="font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-strong);margin:0 0 8px;">项目人员</div>
-          <div class="status-grid" style="grid-template-columns:1fr;">
-            ${projectPersonnel.map(renderPerson).join('')}
-          </div>
-        </div>
-      `);
-    }
-    if (tempPersonnel.length) {
-      parts.push(`
-        <div style="grid-column:1/-1;">
-          <div style="font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-strong);margin:12px 0 8px;">临时人员</div>
-          <div class="status-grid" style="grid-template-columns:1fr;">
-            ${tempPersonnel.map(renderPerson).join('')}
-          </div>
-        </div>
-      `);
-    }
-    if (!parts.length) {
-      return '<div class="empty" style="grid-column:1/-1;padding:20px;text-align:center;">暂无成员数据</div>';
-    }
-    return parts.join('');
+    const projectCount = members.filter(function(m){ return m.role !== 'TEMP'; }).length;
+    const tempCount = members.filter(function(m){ return m.role === 'TEMP'; }).length;
+    var html2 = '';
+    if (projectCount > 0) html2 += '<article class="status-card" style="cursor:default"><span>项目人员</span><strong>' + projectCount + '</strong></article>';
+    if (tempCount > 0) html2 += '<article class="status-card" style="cursor:default"><span>临时人员</span><strong>' + tempCount + '</strong></article>';
+    if (!html2) html2 = '<div class="empty" style="grid-column:1/-1;padding:20px;text-align:center;">暂无成员数据</div>';
+    return html2;
   })();
 
   renderProjectStructure(project, modules, orderedTasks);
 
-  document.querySelector('#signals').innerHTML = [
-    {
-      title: '关键节点优先级更清晰',
-      description: `当前有 ${urgentTasks.length} 个高优先或逾期节点，建议按流程图从前往后逐个确认。`,
-      level: 'medium',
-    },
-    {
-      title: '临时工编成可视化',
-      description: `目前临时人员共 ${memberMap.TEMP || 0} 名，适合重点对照签到、物料和接送节点。`,
-      level: 'low',
-    },
-    {
-      title: '逾期节点预警',
-      description: `${overdueCount} 个节点处于逾期或高风险状态，建议在流程图中继续靠前展示。`,
-      level: 'high',
-    },
-    {
-      title: '下一节点提醒',
-      description: nextTask
-        ? `下一条节点是「${nextTask.title}」，负责人 ${nextTask.owner?.name || '未指派'}，截止时间 ${formatDate(nextTask.dueTime)}。`
-        : '当前没有排在最前面的待处理节点。',
-      level: 'low',
-    },
-  ]
-    .map(
-      (item) => `
-      <article class="signal-item">
-        <div class="signal-row">
-          <h4>${item.title}</h4>
-          <span class="signal-state ${item.level}">${item.level}</span>
-        </div>
-        <p>${item.description}</p>
-      </article>
-    `,
-    )
-    .join('');
+  document.querySelector('#signals').innerHTML = (function() {
+    var sigs = [];
+    if (typeof window.__latestIntakeData !== 'undefined' && window.__latestIntakeData) {
+      var ri = window.__latestIntakeData;
+      if (ri.risks && ri.risks.length) {
+        ri.risks.forEach(function(r, i) {
+          sigs.push({ title: '风险提醒', description: r.name || (typeof r === 'string' ? r : ''), level: 'high' });
+        });
+      }
+      if (ri.analysis && ri.analysis.risks && ri.analysis.risks.length) {
+        ri.analysis.risks.forEach(function(r, j) {
+          sigs.push({ title: 'Hermes分析建议', description: typeof r === 'string' ? r : '', level: 'medium' });
+        });
+      }
+    }
+    if (!sigs.length) {
+      sigs.push({ title: '关键节点优先级更清晰', description: '当前有 ' + urgentTasks.length + ' 个高优先或逾期节点。', level: 'medium' });
+      sigs.push({ title: '逾期节点预警', description: overdueCount + ' 个节点处于逾期或高风险状态。', level: 'high' });
+      sigs.push({ title: '暂无风险信号', description: '当前项目没有检测到风险信号。', level: 'low' });
+    }
+    return sigs.map(function(item) {
+      return '<article class="signal-item"><div class="signal-row"><h4>' + item.title + '</h4><span class="signal-state ' + item.level + '">' + item.level + '</span></div><p>' + item.description + '</p></article>';
+    }).join('');
+  })();
 
   renderTaskPublisher(data);
-  renderEventPipeline(eventStats, pendingEvents);
-  document.querySelector('#pendingEvents').innerHTML = eventList.length
-    ? eventList
-        .map((event) => {
-          const proposedTask = getEventTask(event);
-          const confidence = formatConfidence(event.confidence);
-          const confidenceWidth = getConfidenceWidth(event.confidence);
-          const isPending = event.status === 'pending_review';
-
-          return `
-            <article class="feishu-item">
-              <div class="feishu-head">
-                <div>
-                  <h4>${event.title}</h4>
-                  <div class="feishu-summary">${event.description || event.rawContent || '暂无事件说明'}</div>
-                </div>
-                <span class="feishu-status ${event.status}">${eventStatusMap[event.status] || event.status}</span>
-              </div>
-              <div class="confidence-bar"><span style="width:${confidenceWidth}%"></span></div>
-              <div class="feishu-meta">
-                <span class="chip">来源 ${sourceTypeMap[event.sourceType] || event.sourceType}</span>
-                <span class="chip">置信度 ${confidence}</span>
-                <span class="chip">发送人 ${event.sourceSender || '未记录'}</span>
-                <span class="chip">可见 ${visibilityScopeMap[event.visibilityScope] || event.visibilityScope || '管理层'}</span>
-              </div>
-              <div class="feishu-preview">
-                <div class="feishu-preview-item">
-                  <strong>${proposedTask.title || event.title || '未命名事项'}</strong>
-                  <span>${proposedTask.moduleName || '未匹配模块'} · ${proposedTask.ownerName || '待指定负责人'} · ${proposedTask.priority || 'MEDIUM'}</span>
-                </div>
-                <div class="feishu-preview-item">
-                  <strong>原始内容</strong>
-                  <span>${event.rawContent || '暂无原文'}</span>
-                </div>
-              </div>
-              ${
-                isPending
-                  ? `<div class="event-actions">
-                      <button class="button primary" type="button" data-event-action="confirm-task" data-event-id="${event.id}">确认入库</button>
-                      <button class="button secondary" type="button" data-event-action="confirm-edit" data-event-id="${event.id}">修改确认</button>
-                      <button class="button secondary" type="button" data-event-action="duplicate" data-event-id="${event.id}">任务重复</button>
-                      <button class="button tertiary" type="button" data-event-action="more-info" data-event-id="${event.id}">补充信息</button>
-                      <button class="button danger" type="button" data-event-action="reject" data-event-id="${event.id}">驳回</button>
-                    </div>`
-                  : `<div class="event-actions locked">
-                      <span class="chip">${eventStatusMap[event.status] || event.status}</span>
-                      <span class="chip">${event.confirmedAt ? `确认 ${formatDate(event.confirmedAt)}` : `更新 ${formatDate(event.updatedAt || event.createdAt)}`}</span>
-                    </div>`
-              }
-              <div class="feishu-foot">
-                <span>${isPending ? '待确认事件需要项目经理处理。' : '事件已进入正式流程，继续保留在全量事件列表中。'}</span>
-                <strong>${formatDate(event.createdAt)}</strong>
-              </div>
-            </article>
-          `;
-        })
-        .join('')
-    : '<div class="empty">当前项目还没有事件。后续飞书、微信、App 或手动录入的内容会进入这里统一展示。</div>';
 }
 
 async function fetchProjects() {
@@ -1351,8 +1240,12 @@ async function loadDashboard(projectId) {
   eventQueue: [],
 });
     currentProjectCode = '';
+    window.__currentProjectCode = '';
     syncCustomerServiceMessages();
     stopEventPolling();
+    // Clear identity picker
+    const idSelect = document.querySelector('#identitySelect');
+    if (idSelect) idSelect.innerHTML = '<option value="">— 请先选择项目 —</option>';
     return;
   }
 
@@ -1366,11 +1259,181 @@ async function loadDashboard(projectId) {
     throw new Error('project not found');
   }
 
+  // Load intake tasks if NestJS has none
+  if (!data.tasks || !data.tasks.length) {
+    try {
+      var intakeResp = await fetch('/agent/intake/' + encodeURIComponent(projectId) + '/analysis');
+      var intakeData = await intakeResp.json();
+      var id2 = intakeData.data || intakeData;
+      if (id2) {
+        if (id2.tasks && id2.tasks.length) {
+          id2.tasks.forEach(function(t){ var sm = {pending:'PENDING_CONFIRMATION',in_progress:'IN_PROGRESS',collaborating:'CONFIRMED',completed:'COMPLETED',at_risk:'OVERDUE'}; if (!t.status) t.status = 'PENDING_CONFIRMATION'; else if (sm[t.status]) t.status = sm[t.status]; if (!t.priority) t.priority = 'LOW'; var pm = {'高':'HIGH','中':'MEDIUM','低':'LOW'}; if (pm[t.priority]) t.priority = pm[t.priority]; });
+          data.tasks = id2.tasks;
+        }
+        window.__latestIntakeData = id2;
+        // Also set members from intake contacts
+        if (id2.modules && id2.modules.length) {
+          if (!data.project) data.project = {};
+          data.project.modules = id2.modules;
+        }
+        if (id2.contacts && id2.contacts.length) {
+          if (!data.project) data.project = {};
+          data.project.members = id2.contacts.map(function(c, i){ return { id: 'intake_' + i, name: c.name || '', role: c.role || '项目人员', title: c.org || '', department: c.org || '' }; });
+        }
+      }
+    } catch(e) {}
+  }
   render(data, 'live');
   latestDashboardData = data;
   currentProjectCode = projectId;
+  window.__currentProjectCode = projectId;
   syncCustomerServiceMessages();
   startEventPolling();
+  // Show identity picker with project members
+  const projectMembers = data.project?.members || data.members || [];
+  renderIdentityPicker(projectId, projectMembers);
+  loadMyTasks(projectId);
+}
+
+// =============================================================
+// 我的任务 — 展示当前登录账户的任务
+// =============================================================
+
+const TASK_STATUS_MAP = {
+  PENDING_CONFIRMATION: '待确认',
+  CONFIRMED: '已确认',
+  IN_PROGRESS: '进行中',
+  COMPLETED: '已完成',
+  OVERDUE: '已逾期',
+  CANCELLED: '已取消',
+};
+
+const TASK_PRIORITY_MAP = {
+  URGENT: { label: '紧急', color: '#d1453b' },
+  HIGH: { label: '高', color: '#d97a00' },
+  MEDIUM: { label: '中', color: '#4b8bb4' },
+  LOW: { label: '低', color: '#87939a' },
+};
+
+async function loadMyTasks(projectCode) {
+  const container = document.querySelector('#myTasks');
+  const empty = document.querySelector('#myTasksEmpty');
+  if (!container) return;
+  try {
+    // Read stored identity for this project
+    const stored = getStoredIdentity(projectCode);
+    let url = '/agent/my-tasks?projectCode=' + encodeURIComponent(projectCode);
+    if (stored) {
+      if (stored.memberId) {
+        url += '&memberId=' + encodeURIComponent(stored.memberId);
+      } else if (stored.nodeId) {
+        url += '&nodeId=' + encodeURIComponent(stored.nodeId);
+      }
+    }
+    const token = localStorage.getItem('gp_token');
+    const resp = await fetch(url, {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+    });
+    if (resp.status === 401) {
+      container.innerHTML = '<div class="empty">请先<a href="/agent/">登录</a>后查看任务。</div>';
+      return;
+    }
+    const data = await resp.json();
+    const tasks = data.tasks || [];
+    if (tasks.length === 0) {
+      container.innerHTML = '<div class="empty">当前项目暂无分配给您的任务。</div>';
+      return;
+    }
+    container.innerHTML = tasks.map(task => renderMyTaskCard(task, projectCode)).join('');
+    // Attach event listeners
+    container.querySelectorAll('[data-task-action]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const el = e.currentTarget;
+        const action = el.dataset.taskAction;
+        const taskId = el.dataset.taskId;
+        const projectCode = el.dataset.projectCode;
+        if (!taskId || !action) return;
+        el.disabled = true;
+        el.textContent = '处理中...';
+        try {
+          const resp = await fetch('/api/projects/' + encodeURIComponent(projectCode) + '/tasks/' + taskId + '/' + action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          if (!resp.ok) throw new Error('请求失败');
+          // Refresh task list
+          await loadMyTasks(projectCode);
+        } catch(e) {
+          el.disabled = false;
+          el.textContent = '操作失败，重试';
+          console.error('Task action failed:', e);
+        }
+      });
+    });
+  } catch(e) {
+    console.error('loadMyTasks error:', e);
+    if (container) container.innerHTML = '<div class="empty">加载任务失败，请稍后重试。</div>';
+  }
+}
+
+function renderMyTaskCard(task, projectCode) {
+  const statusLabel = TASK_STATUS_MAP[task.status] || task.status || '未知';
+  const priorityInfo = TASK_PRIORITY_MAP[task.priority] || { label: task.priority || '未知', color: '#87939a' };
+  const moduleName = task.module?.name || '项目级任务';
+  const ownerName = task.ownerMember?.user?.name || task.owner?.name || '未指派';
+  const dueTime = task.dueTime ? formatDateTime(task.dueTime) : '--';
+  const isOverdue = task.status === 'OVERDUE';
+  const isPending = task.status === 'PENDING_CONFIRMATION';
+  const isConfirmed = task.status === 'CONFIRMED';
+  const isInProgress = task.status === 'IN_PROGRESS';
+  const isCompleted = task.status === 'COMPLETED';
+
+  let actionBtn = '';
+  if (isPending) {
+    actionBtn = `<button class="button primary small" type="button" data-task-action="confirm" data-task-id="${task.id}" data-project-code="${projectCode}">确认接单</button>`;
+  } else if (isConfirmed) {
+    actionBtn = `<button class="button primary small" type="button" data-task-action="start" data-task-id="${task.id}" data-project-code="${projectCode}">开始执行</button>`;
+  } else if (isInProgress) {
+    actionBtn = `<button class="button primary small" type="button" data-task-action="complete" data-task-id="${task.id}" data-project-code="${projectCode}">标记完成</button>`;
+  } else {
+    actionBtn = `<span class="chip" style="background:${isOverdue ? '#d1453b' : '#5a6b5a'};color:#fff;">${statusLabel}</span>`;
+  }
+
+  return `
+    <article class="task-item ${isOverdue ? 'task-overdue' : ''}">
+      <div class="task-head">
+        <div class="task-title-row">
+          <span class="task-module-tag">${moduleName}</span>
+          <h4>${escapeHtml(task.title)}</h4>
+        </div>
+        <div class="task-badges">
+          <span class="task-priority" style="color:${priorityInfo.color};border-color:${priorityInfo.color};">${priorityInfo.label}</span>
+          <span class="task-status ${task.status}">${statusLabel}</span>
+        </div>
+      </div>
+      ${task.description ? `<p class="task-desc">${escapeHtml(task.description)}</p>` : ''}
+      <div class="task-meta">
+        <span>负责人 ${ownerName}</span>
+        <span>截止 ${dueTime}</span>
+      </div>
+      <div class="task-foot">
+        ${actionBtn}
+        ${task.updates && task.updates.length ? `<span class="chip">${task.updates.length} 条更新</span>` : ''}
+      </div>
+    </article>
+  `;
+}
+
+function formatDateTime(value) {
+  if (!value) return '--';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '--';
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hour = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return month + '-' + day + ' ' + hour + ':' + min;
 }
 
 function formatDateTimeLocal(value) {
@@ -1823,7 +1886,131 @@ function renderEmpty() {
   el = document.querySelector('#structureTree'); if(el) el.innerHTML = '';
 }
 
+// =============================================================
+// 用户信息 & 项目身份
+// =============================================================
+
+function getCurrentUser() {
+  try {
+    return JSON.parse(localStorage.getItem('gp_user') || 'null');
+  } catch { return null; }
+}
+
+function getStoredIdentity(projectCode) {
+  try {
+    return JSON.parse(localStorage.getItem('gp_identity_' + projectCode) || 'null');
+  } catch { return null; }
+}
+
+function setStoredIdentity(projectCode, memberId, memberName, nodeId, nodeName) {
+  if (!projectCode) return;
+  var data = { memberId: memberId || '', memberName: memberName || '' };
+  if (nodeId) { data.nodeId = nodeId; data.nodeName = nodeName || ''; }
+  localStorage.setItem('gp_identity_' + projectCode, JSON.stringify(data));
+}
+
+function renderUserBar() {
+  const user = getCurrentUser();
+  const avatar = document.querySelector('#userBarAvatar');
+  const name = document.querySelector('#userBarName');
+  const role = document.querySelector('#userBarRole');
+  if (!name) return;
+  if (user) {
+    name.textContent = user.name || '用户';
+    if (avatar) avatar.textContent = (user.name || '?')[0];
+    if (role) {
+      const stored = getStoredIdentity(window.__currentProjectCode || '');
+      if (stored && stored.nodeName) {
+        role.textContent = stored.nodeName;
+      } else {
+        role.textContent = user.role === 'admin' ? '管理员' : '成员';
+      }
+    }
+  } else {
+    name.textContent = '未登录';
+    if (avatar) avatar.textContent = '?';
+    if (role) role.textContent = '';
+  }
+}
+
+function renderIdentityPicker(projectCode, members) {
+  const select = document.querySelector('#identitySelect');
+  if (!select) return;
+  const stored = getStoredIdentity(projectCode);
+
+  // Fetch identity pool (claimable nodes) from agent
+  fetch('/agent/identity-pool/' + encodeURIComponent(projectCode))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      const pool = data.nodes || [];
+      let html = '<option value="">— 请选择你在本项目中的身份 —</option>';
+
+      if (pool.length > 0) {
+        pool.forEach(function(node) {
+          var label = node.name;
+          if (node.parentName) label = node.parentName + ' › ' + label;
+          if (node.assignedMemberId) {
+            label += ' (已认领: ' + (node.assignedMemberName || node.assignedMemberId) + ')';
+          }
+          var selected = '';
+          // Match by stored nodeId
+          if (stored && stored.nodeId === node.nodeId) selected = ' selected';
+          // Only allow selecting unclaimed nodes (or the one you already claimed)
+          var disabled = node.assignedMemberId && (!stored || stored.nodeId !== node.nodeId) ? ' disabled' : '';
+          html += '<option value="' + node.nodeId + '" data-claimed="' + (node.assignedMemberId || '') + '"' + selected + disabled + '>' + label + '</option>';
+        });
+      } else {
+        // Fallback: no claimable nodes yet, use member list
+        if (members && members.length) {
+          members.forEach(function(m) {
+            var mName = m.user ? m.user.name : (m.name || '成员');
+            var mRole = roleNameMap[m.role] || m.role || '';
+            var label = mName + (mRole ? ' (' + mRole + ')' : '');
+            var selected = stored && stored.memberId === m.id ? ' selected' : '';
+            html += '<option value="m_' + m.id + '"' + selected + '>' + label + '</option>';
+          });
+        }
+      }
+
+      select.innerHTML = html;
+
+      // Restore stored selection
+      if (stored && stored.nodeId) {
+        select.value = stored.nodeId;
+      } else if (stored && stored.memberId && pool.length === 0) {
+        select.value = 'm_' + stored.memberId;
+      }
+
+      // Auto-select if only one unclaimed node
+      var unclaimedNodes = pool.filter(function(n) { return !n.assignedMemberId; });
+      if (!stored && unclaimedNodes.length === 1) {
+        select.value = unclaimedNodes[0].nodeId;
+      }
+    })
+    .catch(function() {
+      // Fallback: show member list
+      var html = '<option value="">— 请选择你在本项目中的身份 —</option>';
+      if (members && members.length) {
+        members.forEach(function(m) {
+          var mName = m.user ? m.user.name : (m.name || '成员');
+          var mRole = roleNameMap[m.role] || m.role || '';
+          var label = mName + (mRole ? ' (' + mRole + ')' : '');
+          var selected = stored && stored.memberId === m.id ? ' selected' : '';
+          html += '<option value="m_' + m.id + '"' + selected + '>' + label + '</option>';
+        });
+      }
+      select.innerHTML = html;
+    });
+}
+
+function logout() {
+  localStorage.removeItem('gp_token');
+  localStorage.removeItem('gp_user');
+  window.location.href = '/agent/login';
+}
+
 async function bootstrap() {
+  renderUserBar();
   const params = new URLSearchParams(window.location.search);
   const rawProjectIdentifier = params.get('projectCode') || params.get('projectId') || '';
   const select = document.querySelector('#projectSelect');
@@ -1833,7 +2020,6 @@ async function bootstrap() {
   const openIntakeWorkbookButton = document.querySelector('#openIntakeWorkbook');
   const openProjectStructureButton = document.querySelector('#openProjectStructure');
   const openProjectFilesButton = document.querySelector('#openProjectFiles');
-  const pendingEventsContainer = document.querySelector('#pendingEvents');
   const eventReviewModal = document.querySelector('#eventReviewModal');
   const eventReviewForm = document.querySelector('#eventReviewForm');
   const closeEventReviewButton = document.querySelector('#closeEventReview');
@@ -2048,28 +2234,6 @@ async function bootstrap() {
     });
   });
 
-  pendingEventsContainer.addEventListener('click', async (event) => {
-    const target = event.target.closest('[data-event-action]');
-    if (!target) {
-      return;
-    }
-
-    const action = target.getAttribute('data-event-action');
-    const eventId = target.getAttribute('data-event-id');
-    if (!action || !eventId) {
-      return;
-    }
-
-    status.textContent = '正在处理 AI 事件...';
-
-    try {
-      await reviewEvent(eventId, action);
-      status.textContent = '事件已处理，dashboard 已刷新。';
-    } catch (error) {
-      status.textContent = error?.message || '事件处理失败，请稍后再试。';
-    }
-  });
-
   closeEventReviewButton.addEventListener('click', closeEventReviewModal);
   cancelEventReviewButton.addEventListener('click', closeEventReviewModal);
   eventReviewModal.addEventListener('click', (event) => {
@@ -2213,6 +2377,51 @@ async function bootstrap() {
       status.textContent = error?.message || '删除项目失败，请稍后再试。';
     }
   });
+
+  // 项目中身份选择（节点池 or 成员列表）
+  const identitySelect = document.querySelector('#identitySelect');
+  if (identitySelect) {
+    identitySelect.addEventListener('change', async function() {
+      const value = this.value;
+      const projectCode = currentProjectCode;
+      if (!value || !projectCode) {
+        if (!value) {
+          localStorage.removeItem('gp_identity_' + projectCode);
+          document.querySelector('#userBarRole').textContent = '';
+        }
+        return;
+      }
+      const selectedOption = this.options[this.selectedIndex];
+      const label = selectedOption.textContent || '成员';
+      const user = getCurrentUser();
+
+      // nodeId 选项（不是 m_ 前缀）= 节点身份池
+      if (!value.startsWith('m_')) {
+        // Claim this node as the user's identity
+        try {
+          const claimResp = await fetch('/agent/identity-pool/' + encodeURIComponent(projectCode) + '/claim', {
+            method: 'POST',
+            headers: user ? { 'Authorization': 'Bearer ' + (localStorage.getItem('gp_token') || '') } : {},
+            body: JSON.stringify({ nodeId: value, memberId: user ? user.id || '' : '', memberName: user ? user.name || '' : '' }),
+          });
+          const claimResult = await claimResp.json();
+          if (claimResult.ok) {
+            setStoredIdentity(projectCode, '', '', value, label);
+            // Update user bar role
+            const roleEl = document.querySelector('#userBarRole');
+            if (roleEl) roleEl.textContent = label;
+          }
+        } catch(e) {
+          console.error('认领节点失败:', e);
+        }
+      } else {
+        // Legacy member-based selection
+        const memberId = value.substring(2);
+        setStoredIdentity(projectCode, memberId, label);
+      }
+      loadMyTasks(projectCode);
+    });
+  }
 
   if (rawProjectIdentifier) {
     try {

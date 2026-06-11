@@ -1,13 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head><script>
-(function() {
-  var token = localStorage.getItem('gp_token');
-  if (!token) {
-    window.location.href = '/agent/login';
-  }
-})();
-</script>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Golden Project Dashboard</title>
@@ -23,22 +16,6 @@
     </script>
   </head>
   <body>
-  <nav style="display:flex;align-items:center;justify-content:space-between;padding:8px 20px;background:#1e293b;border-bottom:1px solid #334155;font-size:13px;">
-  <span style="color:#94a3b8;" id="navUserLbl"></span>
-  <div>
-    <a href="/agent/account" style="color:#60a5fa;text-decoration:none;margin-right:16px;">账号管理</a>
-    <a href="/agent/login" onclick="localStorage.clear();" style="color:#ef4444;text-decoration:none;">登出</a>
-  </div>
-</nav>
-<script>
-(function(){
-  try {
-    var u = JSON.parse(localStorage.getItem('gp_user') || '{}');
-    if (u.name) document.getElementById('navUserLbl').textContent = u.name;
-  } catch(e) {}
-})();
-</script>
-
     <main class="shell">
       <section class="hero">
         <div class="hero-top">
@@ -63,7 +40,7 @@
               </div>
               <div class="toolbar project-toolbar">
                 <button class="button primary" type="submit">加载项目</button>
-                
+                <button class="button secondary" id="useDemo" type="button">查看演示</button>
                 <button class="button tertiary" id="createProject" type="button">+ 新增项目</button>
                 <button class="button danger" id="deleteProject" type="button">删除项目</button>
                 <button class="button primary" id="openIntakeWorkbook" type="button">信息录入</button>
@@ -78,6 +55,23 @@
         </div>
 
         <div class="hero-metrics" id="heroMetrics"></div>
+      </section>
+
+      <!-- 用户信息栏 -->
+      <section class="user-bar" id="userBar">
+        <div class="user-bar-left">
+          <span class="user-bar-avatar" id="userBarAvatar">?</span>
+          <span class="user-bar-name" id="userBarName">未登录</span>
+          <span class="user-bar-role" id="userBarRole"></span>
+          <a class="user-bar-link" href="/agent/account">账号管理</a>
+          <a class="user-bar-link danger" href="javascript:logout()">退出</a>
+        </div>
+        <div class="user-bar-right" id="userBarIdentity">
+          <span class="user-bar-identity-label">项目中身份：</span>
+          <select class="user-bar-identity-select" id="identitySelect">
+            <option value="">— 请选择你在本项目中的身份 —</option>
+          </select>
+        </div>
       </section>
 
       <section class="overview-band">
@@ -127,15 +121,16 @@
       </section>
 
       <section class="command-grid">
-          <article class="panel event-list-panel">
+          <article class="panel task-list-panel">
             <div class="panel-header">
               <div>
-                <h3>事件列表</h3>
-                <p>所有来源的事件都会进入统一 Event 列表，待确认事项在上方，已确认和已发布事项自动向下排列。</p>
+                <h3>我的任务</h3>
+                <p>当前登录账号的任务列表。点击状态按钮可更新任务进度。</p>
               </div>
             </div>
-            <div class="event-pipeline" id="eventPipeline"></div>
-            <div class="feishu-list" id="pendingEvents"></div>
+            <div class="task-list" id="myTasks">
+              <div class="empty" id="myTasksEmpty">项目加载中，请稍候...</div>
+            </div>
           </article>
 
           <article class="panel task-publish-panel">

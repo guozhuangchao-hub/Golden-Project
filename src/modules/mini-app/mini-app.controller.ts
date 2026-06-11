@@ -9,8 +9,12 @@ export class MiniAppController {
   constructor(private readonly miniAppService: MiniAppService) {}
 
   @Get('me/tasks')
-  getMyTasks(@Query('memberId') memberId: string, @Query('projectId') projectId?: string) {
-    return this.miniAppService.getMyTasks(memberId, projectId);
+  getMyTasks(
+    @Query('memberId') memberId?: string,
+    @Query('projectId') projectId?: string,
+    @Query('nodeId') nodeId?: string,
+  ) {
+    return this.miniAppService.getMyTasks(memberId, projectId, nodeId);
   }
 
   @Get('me/reminders')
@@ -29,6 +33,30 @@ export class MiniAppController {
   @Get('project/:projectCode/contacts')
   getProjectContacts(@Param('projectCode') projectCode: string) {
     return this.miniAppService.getProjectContacts(projectCode);
+  }
+
+  @Get('project/:projectCode/identity-pool')
+  getIdentityPool(
+    @Param('projectCode') projectCode: string,
+    @Query('memberId') memberId?: string,
+  ) {
+    return this.miniAppService.getIdentityPool(projectCode, memberId);
+  }
+
+  @Post('project/:projectCode/identity-claim')
+  claimIdentity(
+    @Param('projectCode') projectCode: string,
+    @Body() dto: { memberId: string; nodeId: string },
+  ) {
+    return this.miniAppService.claimIdentity(projectCode, dto.memberId, dto.nodeId);
+  }
+
+  @Post('project/:projectCode/identity-release')
+  releaseIdentity(
+    @Param('projectCode') projectCode: string,
+    @Body() dto: { memberId?: string; nodeId: string },
+  ) {
+    return this.miniAppService.releaseIdentity(projectCode, dto.nodeId, dto.memberId);
   }
 
   @Post('tasks/:taskId/confirm')
@@ -51,4 +79,3 @@ export class MiniAppController {
     return this.miniAppService.markReminderRead(notificationId);
   }
 }
-

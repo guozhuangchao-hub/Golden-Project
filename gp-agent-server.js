@@ -3,6 +3,8 @@ require("dotenv").config({path:"/opt/golden-project/.env"});
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { execSync } = require('child_process');
 
 const PORT = 3003;
@@ -11,6 +13,40 @@ const DEEPSEEK_KEY = process.env.GP_AGENT_KEY || '';
 const MODEL = 'deepseek-chat';
 const API_URL = 'https://api.deepseek.com/chat/completions';
 const JWT_SECRET = crypto.randomBytes(32).toString('hex');
+const STATE_DIR = '/opt/golden-project/codex-recovery/state';
+fs.mkdirSync(STATE_DIR, { recursive: true });
+
+function stateFilePath(key) {
+  const safeKey = String(key).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return path.join(STATE_DIR, safeKey + '.json');
+}
+
+function readStateRaw(key) {
+  try {
+    return fs.readFileSync(stateFilePath(key), 'utf8');
+  } catch (_) {
+    return process.env[key] || '';
+  }
+}
+
+function readStateJson(key) {
+  const raw = readStateRaw(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeStateRaw(key, raw) {
+  process.env[key] = raw;
+  fs.writeFileSync(stateFilePath(key), raw, 'utf8');
+}
+
+function writeStateJson(key, value) {
+  writeStateRaw(key, JSON.stringify(value));
+}
 
 // Simple user store
 let tokens = {}; // token -> user
@@ -101,16 +137,27 @@ function requireUser(req, res) {
   return user;
 }
 
-// ─── Users (hardcoded from seed data) ───
+// ─── Users (hardcoded from seed data + database users) ───
 const USERS = [
-  { id: 'yh1', name: 'yh1', mobile: '13800000001', role: 'admin', password: '123456' },
-  { id: 'yh2', name: 'yh2', mobile: '13800000002', role: 'admin', password: '123456' },
-  { id: 'yh3', name: 'yh3', mobile: '13800000003', role: 'admin', password: '123456' },
-  { id: 'yh4', name: 'yh4', mobile: '13800000004', role: 'admin', password: '123456' },
-  { id: 'yh5', name: 'yh5', mobile: '13800000005', role: 'admin', password: '123456' },
-  { id: 'yh6', name: 'yh6', mobile: '13800000006', role: 'admin', password: '123456' },
-  { id: 'yh7', name: 'yh7', mobile: '13800000007', role: 'member', password: '123456' },
-  { id: 'yh8', name: 'yh8', mobile: '13800000008', role: 'member', password: '123456' },
+  { id: 'yh1', name: '赵总', mobile: '13800000001', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh2', name: '陈凯', mobile: '13800000002', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh3', name: '林霄', mobile: '13800000003', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh4', name: '王晴', mobile: '13800000004', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh5', name: '孙涛', mobile: '13800000005', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh6', name: '刘颖', mobile: '13800000006', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh7', name: '临时工小李', mobile: '13800000007', wechat: '', role: 'member', password: '123456' },
+  { id: 'yh8', name: '临时工阿周', mobile: '13800000008', wechat: '', role: 'member', password: '123456' },
+  { id: 'gw', name: '甘伟文', mobile: '13800000009', wechat: '', role: 'member', password: '123456' },
+  { id: 'ws', name: '王森', mobile: '13800000010', wechat: '', role: 'member', password: '123456' },
+  { id: 'sj', name: '苏杰', mobile: '13800000011', wechat: '', role: 'member', password: '123456' },
+  { id: 'lyh', name: '林永辉', mobile: '13800000012', wechat: '', role: 'member', password: '123456' },
+  { id: 'cst', name: '陈顺婷', mobile: '13800000013', wechat: '', role: 'member', password: '123456' },
+  { id: 'zsl', name: '詹少立', mobile: '13800000014', wechat: '', role: 'member', password: '123456' },
+  { id: 'fjs', name: '傅江水', mobile: '13800000015', wechat: '', role: 'member', password: '123456' },
+  { id: 'zyx', name: '张艳欣', mobile: '13800000016', wechat: '', role: 'member', password: '123456' },
+  { id: 'qyy', name: '邱莹莹', mobile: '13800000017', wechat: '', role: 'member', password: '123456' },
+  { id: 'hcy', name: '黄辰阳', mobile: '13800000018', wechat: '', role: 'member', password: '123456' },
+  { id: 'cjc', name: '陈俊超', mobile: '13800000019', wechat: '', role: 'member', password: '123456' },
 ];
 
 // ─── HTTP Server ───
@@ -140,7 +187,7 @@ const server = http.createServer(async (req, res) => {
         }
         const token = crypto.randomBytes(24).toString('hex');
         tokens[token] = user;
-        res.end(JSON.stringify({ token, user: { id: user.id, name: user.name, mobile: user.mobile, role: user.role } }));
+        res.end(JSON.stringify({ token, user: { id: user.id, name: user.name, mobile: user.mobile, wechat: user.wechat || '', role: user.role } }));
       });
       return;
     }
@@ -211,124 +258,494 @@ document.getElementById('password').addEventListener('keydown', e => { if (e.key
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(`<!DOCTYPE html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>账号管理</title>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>人员管理 — Golden Project</title>
 <style>
+:root {
+  --bg: #f4efe5;
+  --ink: #1f241f;
+  --muted: #6b6a63;
+  --muted-light: rgba(31,36,31,0.35);
+  --line: rgba(31,36,31,0.07);
+  --accent: #bf5a36;
+  --accent-soft: rgba(191,90,54,0.1);
+  --accent-strong: #8e3419;
+  --green: #335c4f;
+  --green-soft: rgba(51,92,79,0.08);
+  --gold: #af8d33;
+  --danger: #a63f2f;
+  --danger-soft: rgba(166,63,47,0.08);
+  --panel-bg: rgba(255,251,244,0.92);
+  --card-bg: #fff;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 3px rgba(34,28,16,0.04);
+  --shadow-md: 0 4px 12px rgba(34,28,16,0.06);
+}
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:-apple-system,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
-.card { background:#1e293b; border-radius:12px; padding:24px; margin-bottom:16px; max-width:640px; margin-left:auto; margin-right:auto; }
-h1 { font-size:20px; margin-bottom:16px; }
-h2 { font-size:15px; margin-bottom:12px; color:#e2e8f0; }
-label { display:block; font-size:13px; margin-bottom:4px; color:#94a3b8; }
-input, select { padding:8px 12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:13px; margin:2px; outline:none; }
-input:focus, select:focus { border-color:#3b82f6; }
-button { padding:8px 16px; background:#3b82f6; border:none; border-radius:6px; color:#fff; font-size:13px; cursor:pointer; margin:2px; }
-button:hover { background:#2563eb; }
-.danger { background:#ef4444; }
-.danger:hover { background:#dc2626; }
-.outline { background:transparent; border:1px solid #334155; color:#94a3b8; padding:6px 14px; }
-.msg { font-size:12px; margin-top:8px; padding:6px 10px; border-radius:4px; display:none; }
-.msg-ok { background:#065f46; color:#6ee7b7; }
-.msg-err { background:#7f1d1d; color:#fca5a5; }
-table { width:100%; border-collapse:collapse; font-size:13px; }
-th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #1e293b; }
-th { color:#94a3b8; font-weight:500; }
-.section { margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #1e293b; }
-.section:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
-.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.user-info { font-size:13px; color:#94a3b8; margin-bottom:16px; }
-</style></head>
+html, body {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 8%, rgba(191,90,54,0.1), transparent 30%),
+              radial-gradient(circle at 85% 12%, rgba(175,141,51,0.1), transparent 26%),
+              linear-gradient(165deg, #f7f0e2 0%, #f2ecdf 50%, #ede6d5 100%);
+  color: var(--ink);
+  font-family: "Inter","Hiragino Sans GB","PingFang SC","Microsoft YaHei",sans-serif;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.3), transparent 85%);
+}
+.app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+/* Sidebar */
+.sidebar {
+  width: 240px; flex-shrink: 0;
+  padding: 24px 16px;
+  border-right: 1px solid var(--line);
+  background: rgba(255,251,244,0.6);
+  backdrop-filter: blur(12px);
+  display: flex; flex-direction: column;
+}
+.sidebar-logo { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 28px; padding: 0 8px; }
+.sidebar-logo span { color: var(--accent); }
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  text-decoration: none; transition: all 0.12s;
+}
+.sidebar-nav a:hover { background: var(--accent-soft); color: var(--ink); }
+.sidebar-nav a.active {
+  background: var(--accent-soft); color: var(--accent-strong); font-weight: 600;
+}
+.sidebar-nav .icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-user { margin-top: auto; padding: 12px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+.sidebar-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name { font-size: 13px; font-weight: 600; }
+.sidebar-user-role { font-size: 11px; color: var(--muted); }
+
+/* Main */
+.main { flex: 1; padding: 28px 32px; min-width: 0; }
+
+/* Top bar */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 28px;
+}
+.topbar h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+
+/* Stats row */
+.stats-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--panel-bg); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.stat-card .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+.stat-card .stat-sub { font-size: 11px; color: var(--muted-light); margin-top: 2px; }
+
+/* Section */
+.section {
+  background: var(--panel-bg); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); margin-bottom: 16px;
+  box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px; border-bottom: 1px solid var(--line);
+}
+.section-header h2 { font-size: 15px; font-weight: 700; }
+.section-header .hint { font-size: 12px; color: var(--muted); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 12px 16px; font-weight: 600; color: var(--muted);
+  font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+  background: rgba(31,36,31,0.02);
+  white-space: nowrap;
+}
+td { padding: 14px 16px; border-bottom: 1px solid rgba(31,36,31,0.04); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(191,90,54,0.03); }
+td strong { font-weight: 600; }
+td .muted { color: var(--muted); font-size: 12px; }
+td .small { font-size: 11px; color: var(--muted-light); }
+.role-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 5px;
+  font-size: 11px; font-weight: 600;
+}
+.role-badge.admin { background: var(--accent-soft); color: var(--accent-strong); }
+.role-badge.member { background: rgba(31,36,31,0.05); color: var(--muted); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 16px; border: none; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.12s; text-decoration: none; white-space: nowrap;
+  line-height: 1.2;
+}
+.btn-sm { padding: 5px 10px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-soft { background: var(--accent-soft); color: var(--accent-strong); }
+.btn-soft:hover { background: rgba(191,90,54,0.18); }
+.btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: var(--danger-soft); border: 1px solid rgba(166,63,47,0.25); color: var(--danger); }
+.btn-danger:hover { background: rgba(166,63,47,0.12); }
+
+/* Form inline */
+.form-row {
+  display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+.form-group input, .form-group select {
+  padding: 8px 12px; background: #fff; border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm); color: var(--ink); font-size: 13px;
+  outline: none; transition: border-color 0.15s; min-width: 120px;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+.form-group input::placeholder { color: rgba(31,36,31,0.2); }
+
+/* Inline form area */
+.inline-form {
+  padding: 16px 24px; border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,0.3);
+}
+
+/* Messages */
+.msg {
+  font-size: 12px; padding: 8px 14px; border-radius: var(--radius-sm);
+  display: none; line-height: 1.5;
+}
+.msg-ok { background: var(--green-soft); color: var(--green); display: flex; align-items: center; gap: 6px; }
+.msg-err { background: var(--danger-soft); color: var(--danger); display: flex; align-items: center; gap: 6px; }
+
+/* Profile section (bottom) */
+.profile-form { padding: 20px 24px; }
+.color-strip { display: flex; gap: 6px; margin-top: 8px; }
+.color-swatch {
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: all 0.1s;
+}
+.color-swatch:hover { transform: scale(1.15); }
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .main { padding: 20px 16px; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .form-row { flex-direction: column; }
+  .inline-form { padding: 14px 16px; }
+}
+</style>
+</head>
 <body>
-<div class="card">
-<div class="user-info" id="userInfo"></div>
-<div class="section">
-<h2>修改手机号</h2>
-<div class="row"><input type="text" id="newMobile" placeholder="新手机号" style="flex:1;"><button onclick="changeMobile()">保存</button></div>
-<div id="mobileMsg" class="msg"></div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><span>GP</span> 管理后台</div>
+    <nav class="sidebar-nav">
+      <a href="#" class="active"><span class="icon">👥</span>人员管理</a>
+      <a href="/console/dashboard"><span class="icon">📊</span>仪表盘</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="sidebar-avatar" id="sideAvatar" style="background:var(--accent);">?</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sideName">—</div>
+        <div class="sidebar-user-role" id="sideRole">管理员</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>人员管理</h1>
+        <p style="font-size:13px;color:var(--muted);margin-top:2px;">管理系统账号与成员信息</p>
+      </div>
+      <div class="topbar-right">
+        <span style="font-size:12px;color:var(--muted);" id="loginInfo"></span>
+        <a class="btn btn-ghost btn-sm" href="javascript:logout()">退出</a>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">总成员</div>
+        <div class="stat-value" id="statTotal">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">管理员</div>
+        <div class="stat-value" id="statAdmin">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">普通成员</div>
+        <div class="stat-value" id="statMember">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">我的项目</div>
+        <div class="stat-value" id="statProjects">0</div>
+        <div class="stat-sub" id="statProjectsDetail"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>添加成员</h2>
+        <span class="hint">创建系统账号，可用于项目成员分配</span>
+      </div>
+      <div class="inline-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>姓名</label>
+            <input id="cName" placeholder="输入姓名" />
+          </div>
+          <div class="form-group">
+            <label>手机号</label>
+            <input id="cMobile" placeholder="手机号（登录账号）" />
+          </div>
+          <div class="form-group">
+            <label>角色</label>
+            <select id="cRole">
+              <option value="member">普通成员</option>
+              <option value="admin">管理员</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input id="cPwd" placeholder="默认 123456" />
+          </div>
+          <button class="btn btn-primary" onclick="createUser()">添加</button>
+        </div>
+        <div id="createMsg" class="msg" style="margin-top:10px;"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"></th>
+              <th>姓名</th>
+              <th>手机号</th>
+              <th>微信</th>
+              <th>角色</th>
+              <th>参与项目</th>
+              <th style="width:180px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="userList"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted);">加载中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>我的账号</h2>
+        <a class="btn btn-soft btn-sm" href="/console/dashboard">← 返回仪表盘</a>
+      </div>
+      <div class="profile-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>姓名</label>
+            <input id="editName" style="min-width:140px;" />
+          </div>
+          <button class="btn btn-soft btn-sm" onclick="changeName()">更新姓名</button>
+          <div class="form-group">
+            <label>微信号</label>
+            <input id="editWechat" placeholder="微信号" style="min-width:140px;" />
+          </div>
+          <button class="btn btn-soft btn-sm" onclick="changeContact()">保存微信</button>
+        </div>
+        <div class="form-row" style="margin-top:12px;">
+          <span style="font-size:11px;font-weight:600;color:var(--muted);">头像颜色</span>
+          <div class="color-strip" id="inlineColorPicker"></div>
+        </div>
+        <div id="nameMsg" class="msg" style="margin-top:10px;"></div>
+        <div id="contactMsg" class="msg" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </main>
 </div>
-<div class="section">
-<h2>修改密码</h2>
-<input type="password" id="oldPwd" placeholder="原密码" style="width:100%;margin-bottom:6px;">
-<div class="row"><input type="password" id="newPwd" placeholder="新密码" style="flex:1;"><button onclick="changePwd()">保存</button></div>
-<div id="pwdMsg" class="msg"></div>
-</div>
-<div id="adminSection" style="display:none;">
-<div class="section">
-<h2>创建成员</h2>
-<div class="row">
-<input id="cName" placeholder="姓名">
-<input id="cMobile" placeholder="手机号">
-<select id="cRole"><option value="member">成员</option><option value="admin">管理员</option></select>
-</div>
-<div class="row"><input id="cPwd" placeholder="密码(默认123456)" style="flex:1;"><button onclick="createUser()">创建</button></div>
-<div id="createMsg" class="msg"></div>
-</div>
-<div class="section">
-<h2>成员列表</h2>
-<table><thead><tr><th>姓名</th><th>手机号</th><th>角色</th><th>操作</th></tr></thead><tbody id="userList"></tbody></table>
-</div>
-</div>
-<div class="row" style="justify-content:space-between;margin-top:16px;">
-<button class="outline" onclick="window.location.href='/console/dashboard'">返回仪表盘</button>
-<button class="outline" onclick="logout()" style="color:#ef4444;">退出登录</button>
-</div>
-</div>
+
 <script>
 var token = localStorage.getItem('gp_token');
 var user = JSON.parse(localStorage.getItem('gp_user') || '{}');
 if (!token) window.location.href = '/agent/login';
-document.getElementById('userInfo').textContent = user.name + ' (' + (user.role==='admin'?'管理员':'成员') + ')';
-if (user.role === 'admin') document.getElementById('adminSection').style.display = 'block';
+if (user.role !== 'admin') window.location.href = '/console/dashboard';
 
-function msg(id, text, type) {
-  var m = document.getElementById(id);
-  m.textContent = text; m.className = 'msg msg-' + type; m.style.display = 'block';
-  setTimeout(function(){ m.style.display = 'none'; }, 3000);
+var AVATAR_COLORS = ['#bf5a36','#335c4f','#af8d33','#4a7b9d','#8b5e8a','#c0564a','#4b8b6a','#b87a3a','#5a6b9a','#a0556b'];
+
+function renderSidebar() {
+  var letter = (user.name || '?')[0];
+  document.getElementById('sideName').textContent = user.name || '—';
+  document.getElementById('sideRole').textContent = user.role === 'admin' ? '管理员' : '成员';
+  var a = document.getElementById('sideAvatar');
+  a.textContent = letter;
+  a.style.background = user.avatarColor || AVATAR_COLORS[0];
 }
-function changeMobile() {
-  var m = document.getElementById('newMobile').value;
-  fetch('/agent/auth/change-mobile', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({newMobile:m}) })
-  .then(function(r){return r.json()}).then(function(d){ msg('mobileMsg', d.error||'手机号已更新', d.error?'err':'ok'); if(!d.error) localStorage.setItem('gp_user', JSON.stringify({name:user.name,mobile:m,role:user.role})); });
+renderSidebar();
+
+function initColorPicker() {
+  var c = document.getElementById('inlineColorPicker');
+  if (!c) return;
+  var cur = user.avatarColor || AVATAR_COLORS[0];
+  c.innerHTML = AVATAR_COLORS.map(function(v) {
+    var active = v === cur ? ' style="border-color:var(--ink);"' : '';
+    return '<div class="color-swatch" data-color="' + v + '" style="background:' + v + ';"' + active + '></div>';
+  }).join('');
+  // Use event delegation instead of inline onclick
+  c.addEventListener('click', function(e) {
+    var swatch = e.target.closest('.color-swatch');
+    if (!swatch) return;
+    selectColor(swatch.dataset.color);
+  });
 }
-function changePwd() {
-  fetch('/agent/auth/change-password', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({oldPassword:document.getElementById('oldPwd').value,newPassword:document.getElementById('newPwd').value}) })
-  .then(function(r){return r.json()}).then(function(d){ msg('pwdMsg', d.error||'密码已更新', d.error?'err':'ok'); });
+function selectColor(color) {
+  user.avatarColor = color;
+  localStorage.setItem('gp_user', JSON.stringify(user));
+  document.getElementById('sideAvatar').style.background = color;
+  var sw = document.querySelectorAll('#inlineColorPicker .color-swatch');
+  for (var i = 0; i < sw.length; i++) sw[i].style.borderColor = sw[i].dataset.color === color ? 'var(--ink)' : 'transparent';
 }
-function logout() { localStorage.clear(); window.location.href = '/agent/login'; }
+initColorPicker();
+
+document.getElementById('editName').value = user.name || '';
+document.getElementById('loginInfo').textContent = user.name + ' · ' + user.mobile;
+
+function msg(id, t, type) { var m = document.getElementById(id); if (!m) return; m.textContent = t; m.className = 'msg msg-' + type; setTimeout(function(){ m.style.display = 'none'; }, 3500); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function changeName() {
+  var n = document.getElementById('editName').value.trim();
+  if (!n) return msg('nameMsg', '姓名不能为空', 'err');
+  var btn = event.target; btn.disabled = true; btn.textContent = '保存中...';
+  fetch('/agent/auth/change-name', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({name:n})})
+  .then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('nameMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '更新姓名'; return; }
+    user.name = n; localStorage.setItem('gp_user', JSON.stringify(user));
+    document.getElementById('sideName').textContent = n;
+    document.getElementById('sideAvatar').textContent = (n || '?')[0];
+    document.getElementById('loginInfo').textContent = n + ' · ' + user.mobile;
+    msg('nameMsg', '姓名已更新', 'ok'); btn.disabled = false; btn.textContent = '更新姓名';
+  });
+}
+
+function changeContact() {
+  var w = document.getElementById('editWechat').value.trim();
+  var btn = event.target; btn.disabled = true; btn.textContent = '保存中...';
+  fetch('/agent/auth/change-contact', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({wechat:w})})
+  .then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('contactMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '保存微信'; return; }
+    user.wechat = w; localStorage.setItem('gp_user', JSON.stringify(user));
+    msg('contactMsg', '微信号已更新', 'ok'); btn.disabled = false; btn.textContent = '保存微信';
+  });
+}
+
+function renderStats(users, projects) {
+  document.getElementById('statTotal').textContent = users.length;
+  document.getElementById('statAdmin').textContent = users.filter(function(u){return u.role==='admin';}).length;
+  document.getElementById('statMember').textContent = users.filter(function(u){return u.role!=='admin';}).length;
+  document.getElementById('statProjects').textContent = (projects||[]).length;
+  if (projects&&projects.length) document.getElementById('statProjectsDetail').textContent = projects.map(function(p){return p.name;}).join('、');
+}
+
 function loadUsers() {
-  fetch('/agent/auth/users', { headers:{'Authorization':'Bearer '+token} })
-  .then(function(r){return r.json()}).then(function(users){
+  Promise.all([
+    fetch('/agent/auth/users', {headers:{'Authorization':'Bearer '+token}}).then(function(r){return r.json();}),
+    fetch('/agent/auth/my-projects', {headers:{'Authorization':'Bearer '+token}}).then(function(r){return r.json();}).catch(function(){return [];})
+  ]).then(function(results) {
+    var users = results[0] || [];
+    var projects = results[1] || [];
+    renderStats(users, projects);
     var html = '';
-    users.forEach(function(u){
-      var actions = u.role !== 'admin' ? '<button onclick="resetPwd(\\''+u.mobile+'\\')">重置密码</button> <button class=\\"danger\\" onclick="deleteUser(\\''+u.mobile+'\\')">删除</button>' : '<span style="color:#64748b;font-size:11px;">管理员</span>';
-      html += '<tr><td>'+u.name+'</td><td>'+u.mobile+'</td><td>'+(u.role==='admin'?'管理员':'成员')+'</td><td>'+actions+'</td></tr>';
-    });
+    if (!users.length) {
+      html = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted);">暂无成员，请在上方添加</td></tr>';
+    } else {
+      users.forEach(function(u, idx) {
+        var isAdmin = u.role === 'admin';
+        var isSelf = u.mobile === user.mobile;
+        var letter = (u.name || '?')[0];
+        var c = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+        var rh = isAdmin ? '<span class="role-badge admin">管理员</span>' : '<span class="role-badge member">成员</span>';
+        var actions = '';
+        if (isSelf) {
+          actions = '<span style="color:var(--muted-light);font-size:12px;">本人</span>';
+        } else {
+          actions = '<button class="btn btn-soft btn-sm" data-gp-action="resetPwd" data-gp-mobile="'+u.mobile+'">重置密码</button>'
+            + ' <button class="btn btn-danger btn-sm" data-gp-action="deleteUser" data-gp-mobile="'+u.mobile+'">删除</button>';
+        }
+        html += '<tr><td><div class="sidebar-avatar" style="background:'+c+';width:28px;height:28px;font-size:11px;">'+letter+'</div></td>'
+          + '<td><strong>'+esc(u.name)+'</strong></td><td>'+esc(u.mobile)+'</td><td class="muted">'+esc(u.wechat||'—')+'</td><td>'+rh+'</td><td class="small">—</td><td>'+actions+'</td></tr>';
+      });
+    }
     document.getElementById('userList').innerHTML = html;
   });
 }
+
+// Event delegation for user action buttons (bound once)
+(function() {
+  var list = document.getElementById('userList');
+  if (list && !list._gpDelegate) {
+    list._gpDelegate = true;
+    list.addEventListener('click', function(ev) {
+      var btn = ev.target.closest('[data-gp-action]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-gp-action');
+      var mobile = btn.getAttribute('data-gp-mobile');
+      if (action === 'resetPwd') resetPwd(mobile);
+      if (action === 'deleteUser') deleteUser(mobile);
+    });
+  }
+})();
+
 function createUser() {
-  fetch('/agent/auth/users/create', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({
-    name:document.getElementById('cName').value,
-    mobile:document.getElementById('cMobile').value,
-    role:document.getElementById('cRole').value,
-    password:document.getElementById('cPwd').value || '123456'
-  }) }).then(function(r){return r.json()}).then(function(d){
-    msg('createMsg', d.error||'创建成功', d.error?'err':'ok');
-    if(!d.error){ document.getElementById('cName').value=''; document.getElementById('cMobile').value=''; document.getElementById('cPwd').value=''; loadUsers(); }
+  var name = document.getElementById('cName').value.trim();
+  var mobile = document.getElementById('cMobile').value.trim();
+  if (!name || !mobile) { msg('createMsg', '请填写姓名和手机号', 'err'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = '添加中...';
+  fetch('/agent/auth/users/create', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({
+    name:name, mobile:mobile, role:document.getElementById('cRole').value, password:document.getElementById('cPwd').value||'123456'
+  })}).then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('createMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '添加'; return; }
+    msg('createMsg', '成员「'+d.name+'」已创建', 'ok');
+    document.getElementById('cName').value = ''; document.getElementById('cMobile').value = ''; document.getElementById('cPwd').value = '';
+    loadUsers(); btn.disabled = false; btn.textContent = '添加';
   });
 }
 function deleteUser(mobile) { if(!confirm('确认删除 '+mobile+'？')) return;
-  fetch('/agent/auth/users/delete', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile}) })
-  .then(function(r){return r.json()}).then(function(d){ msg('createMsg', d.error||'已删除', d.error?'err':'ok'); loadUsers(); });
+  fetch('/agent/auth/users/delete', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile:mobile})})
+  .then(function(r){return r.json()}).then(function(d){msg('createMsg', d.error||'已删除', d.error?'err':'ok'); loadUsers();});
 }
 function resetPwd(mobile) { var p = prompt('新密码（留空=123456）：');
-  fetch('/agent/auth/users/reset-password', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile:mobile,newPassword:p||'123456'}) })
-  .then(function(r){return r.json()}).then(function(d){ msg('createMsg', d.error||'密码已重置', d.error?'err':'ok'); });
+  fetch('/agent/auth/users/reset-password', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile:mobile, newPassword:p||'123456'})})
+  .then(function(r){return r.json()}).then(function(d){msg('createMsg', d.error||'密码已重置', d.error?'err':'ok');});
 }
-if (user.role === 'admin') loadUsers();
-</script></body></html>`);
+function logout() { localStorage.clear(); window.location.href = '/agent/login'; }
+loadUsers();
+</script>
+</body>
+</html>`);
     }
-
     // GET /admin - Redirect to account page (now integrated)
     if (req.method === 'GET' && parts.join('/') === 'admin') {
       res.writeHead(302, { 'Location': '/agent/account' });
@@ -347,7 +764,7 @@ if (user.role === 'admin') loadUsers();
         res.writeHead(403);
         return res.end(JSON.stringify({ error: '仅管理员可查看用户列表' }));
       }
-      return res.end(JSON.stringify(USERS.map(u => ({ id: u.id, name: u.name, mobile: u.mobile, role: u.role }))));
+      return res.end(JSON.stringify(USERS.map(u => ({ id: u.id, name: u.name, mobile: u.mobile, wechat: u.wechat || '', role: u.role }))));
     }
 
     // POST /auth/users/create - Create user (admin)
@@ -361,24 +778,24 @@ if (user.role === 'admin') loadUsers();
       let body = '';
       req.on('data', c => body += c);
       req.on('end', () => {
-        const { name, mobile, password, role } = JSON.parse(body);
+        const { name, mobile, password, role, wechat } = JSON.parse(body);
         if (USERS.find(u => u.mobile === mobile)) {
           res.writeHead(409);
           return res.end(JSON.stringify({ error: '该手机号已存在' }));
         }
         const id = 'user_' + Date.now();
-        const newUser = { id, name: name || mobile, mobile, password: password || '123456', role: role || 'member' };
+        const newUser = { id, name: name || mobile, mobile, wechat: wechat || '', password: password || '123456', role: role || 'member' };
         USERS.push(newUser);
-        res.end(JSON.stringify({ id, name: newUser.name, mobile, role: newUser.role }));
+        res.end(JSON.stringify({ id, name: newUser.name, mobile, wechat: newUser.wechat, role: newUser.role }));
       });
       return;
     }
 
-    // POST /auth/users/delete - Delete user (admin only, cannot delete admin)
+    // POST /auth/users/delete - Delete user (admin only)
     if (req.method === 'POST' && parts.join('/') === 'auth/users/delete') {
-      const admin = requireUser(req, res);
-      if (!admin) return;
-      if (admin.role !== 'admin') {
+      const adminUser = requireUser(req, res);
+      if (!adminUser) return;
+      if (adminUser.role !== 'admin') {
         res.writeHead(403);
         return res.end(JSON.stringify({ error: '仅管理员可删除用户' }));
       }
@@ -386,9 +803,9 @@ if (user.role === 'admin') loadUsers();
       req.on('data', c => body += c);
       req.on('end', () => {
         const { mobile } = JSON.parse(body);
+        if (mobile === adminUser.mobile) return res.end(JSON.stringify({ error: '不能删除自己' }));
         const idx = USERS.findIndex(u => u.mobile === mobile);
         if (idx === -1) return res.end(JSON.stringify({ error: '用户不存在' }));
-        if (USERS[idx].role === 'admin') return res.end(JSON.stringify({ error: '不能删除管理员' }));
         USERS.splice(idx, 1);
         res.end(JSON.stringify({ ok: true }));
       });
@@ -429,6 +846,71 @@ if (user.role === 'admin') loadUsers();
         user.mobile = newMobile;
         res.end(JSON.stringify({ ok: true }));
       });
+      return;
+    }
+
+    // POST /auth/change-name - Change own display name
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-name') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { name } = JSON.parse(body);
+        if (!name || !name.trim()) {
+          return res.end(JSON.stringify({ error: '姓名不能为空' }));
+        }
+        user.name = name.trim();
+        res.end(JSON.stringify({ ok: true, name: user.name }));
+      });
+      return;
+    }
+
+    // POST /auth/change-contact - Update contact info (wechat, mobile)
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-contact') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { wechat } = JSON.parse(body);
+        user.wechat = wechat || '';
+        res.end(JSON.stringify({ ok: true, wechat: user.wechat }));
+      });
+      return;
+    }
+
+    // GET /auth/my-projects - List projects the current user is a member of
+    if (req.method === 'GET' && parts.join('/') === 'auth/my-projects') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      (async () => {
+        try {
+          const projects = await gpApi('GET', '/api/projects');
+          const myProjects = [];
+          if (Array.isArray(projects)) {
+            for (const p of projects) {
+              const detail = await gpApi('GET', '/api/projects/' + p.id).catch(() => ({}));
+              const members = detail.members || [];
+              const myMember = members.find(m => m.user?.mobile === user.mobile);
+              if (myMember) {
+                myProjects.push({
+                  id: p.id,
+                  code: p.code,
+                  name: p.name,
+                  memberId: myMember.id,
+                  role: myMember.role,
+                  title: myMember.title,
+                  memberName: myMember.user?.name || '',
+                });
+              }
+            }
+          }
+          res.end(JSON.stringify(myProjects));
+        } catch(e) {
+          res.end(JSON.stringify([]));
+        }
+      })();
       return;
     }
 
@@ -515,6 +997,69 @@ if (user.role === 'admin') loadUsers();
       return;
     }
 
+    // GET /my-tasks?projectCode=xxx&memberId=xxx&nodeId=xxx - Get current user's tasks
+    if (req.method === 'GET' && parts[0] === 'my-tasks') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const projectCode = url.searchParams.get('projectCode');
+      let memberId = url.searchParams.get('memberId');
+      const nodeId = url.searchParams.get('nodeId');
+      if (!projectCode) { res.end(JSON.stringify({ tasks: [] })); return; }
+      try {
+        // Resolve nodeId to memberId from structure data
+        if (!memberId && nodeId) {
+          const s = readStateRaw('structure_' + projectCode);
+          if (s) {
+            try {
+              const data = JSON.parse(s);
+              const node = (data.tree || []).find(function(n) { return n.id === nodeId; });
+              if (node && node.data && node.data.assignedMemberId) {
+                memberId = node.data.assignedMemberId;
+              }
+            } catch(e) {}
+          }
+          if (!memberId) {
+            try {
+              const claimState = readStateJson('identity_pool_claims_' + projectCode) || {};
+              if (claimState[nodeId] && claimState[nodeId].memberId) {
+                memberId = claimState[nodeId].memberId;
+              }
+            } catch(e) {}
+          }
+        }
+        // If still no memberId, try to match by mobile
+        if (!memberId) {
+          const members = await gpApi('GET', '/api/projects/' + encodeURIComponent(projectCode) + '/members');
+          const member = Array.isArray(members) ? members.find(function(m) { return m.user?.mobile === user.mobile; }) : null;
+          if (!member) { res.end(JSON.stringify({ tasks: [] })); return; }
+          memberId = member.id;
+        }
+        // Fetch tasks for this member
+        const tasks = await gpApi('GET', '/api/mini/me/tasks?memberId=' + encodeURIComponent(memberId));
+        let result = Array.isArray(tasks) ? tasks : [];
+        // If nodeId specified, also filter tasks by node/module name
+        if (nodeId) {
+          const s = process.env['structure_' + projectCode];
+          if (s) {
+            try {
+              const data = JSON.parse(s);
+              const node = (data.tree || []).find(function(n) { return n.id === nodeId; });
+              if (node) {
+                const nodeName = node.name;
+                result = result.filter(function(t) {
+                  return t.moduleName === nodeName || t.module?.name === nodeName || !nodeName;
+                });
+              }
+            } catch(e) {}
+          }
+        }
+        res.end(JSON.stringify({ tasks: result }));
+      } catch(e) {
+        res.end(JSON.stringify({ tasks: [], error: e.message }));
+      }
+      return;
+    }
+
     // === INTAKE (信息录入) ===
 
     // GET /intake/:projectId - Intake page (served from static file)
@@ -558,28 +1103,9 @@ if (user.role === 'admin') loadUsers();
             }
           }
           
-          const prompt = [
-            '你是一个项目信息提取助手。',
-            '根据用户上传的文档内容，提取以下项目信息：',
-            '- projectName: 项目名称',
-            '- projectCode: 项目编号',
-            '- location: 地点',
-            '- startDate: 开始日期',
-            '- endDate: 结束日期',
-            '- description: 项目描述',
-            '- modules: 模块列表（name/leader/desc）',
-            '- members: 成员名单（name/role/title）',
-            '- tasks: 任务清单（title/owner/deadline/priority）',
-            '',
-            '已知项目名称: ' + projectName,
-            '上传文件:',
-            fileTexts.join('\n'),
-            '',
-            '请以JSON格式返回，只返回JSON，不要其他文字：',
-            '{"projectName":"...","projectCode":"...","location":"...","startDate":"...","endDate":"...","description":"...","modules":[],"members":[],"tasks":[]}',
-          ].join('\n');
+          var prompt = "请严格按照analysis_rules.md的完整JSON Schema提取所有字段，包括organizer、executor、activities、contacts、vendors、venues、risks、analysis。已知项目名称: " + projectName + "\\n\\n上传文档内容:\\n" + fileTexts.join("\\n") + "\\n\\n请输出完整JSON。";
 
-          const reply = await new Promise(function(resolve, reject) { try { var https = require("https"); var rules = require("fs").readFileSync("/opt/golden-project/analysis_rules.md","utf8"); var data = JSON.stringify({model:"deepseek-chat",messages:[{role:"system",content:rules},{role:"user",content:prompt}],temperature:0.1,max_tokens:4000,response_format:{type:"json_object"}}); var r = https.request("https://api.deepseek.com/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.GP_AGENT_KEY}},function(resp){ var d = ""; resp.on("data",function(c){d+=c}); resp.on("end",function(){ try { resolve(JSON.parse(d).choices[0].message.content); } catch(e) { resolve(""); } }); }); r.on("error",function(e){resolve("")}); r.write(data); r.end(); } catch(e) { resolve(""); } });
+          const reply = await new Promise(function(resolve, reject) { try { var https = require("https"); var rules = require("fs").readFileSync("/opt/golden-project/analysis_rules.md","utf8"); var data = JSON.stringify({model:"deepseek-chat",messages:[{role:"system",content:rules},{role:"user",content:prompt}],temperature:0.1,max_tokens:12000,response_format:{type:"json_object"}}); var r = https.request("https://api.deepseek.com/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.GP_AGENT_KEY},timeout:50000},function(resp){ var d = ""; resp.on("data",function(c){d+=c}); resp.on("end",function(){ try { resolve(JSON.parse(d).choices[0].message.content); } catch(e) { resolve(""); } }); }); r.on("error",function(e){resolve("")}); r.write(data); r.end(); } catch(e) { resolve(""); } });
 
           let data;
           try {
@@ -705,9 +1231,9 @@ if (user.role === 'admin') loadUsers();
             }
           }
 
-          process.env['intake_' + p] = JSON.stringify(d);
-          process.env['intake_project_' + pcode] = p;
-          process.env['intake_project_' + pid] = p;
+          writeStateJson('intake_' + p, d);
+          writeStateRaw('intake_project_' + pcode, p);
+          writeStateRaw('intake_project_' + pid, p);
           try {
             var sd = { nodes: [], edges: [], structureSource: "ai_generated" };
             if (d.modules && d.modules.length) {
@@ -750,7 +1276,7 @@ if (user.role === 'admin') loadUsers();
                 }
               });
             }
-            process.env["structure_" + pcode] = JSON.stringify(sd);
+            writeStateJson("structure_" + pcode, sd);
           } catch(e) {}
           res.end(JSON.stringify({ ok: true, projectId: pid, projectCode: pcode }));
         } catch(e) { res.end(JSON.stringify({ error: e.message })); }
@@ -760,14 +1286,14 @@ if (user.role === 'admin') loadUsers();
 
     // GET /intake/:code/analysis
     if (req.method === 'GET' && parts[0] === 'intake' && parts[1] && parts[2] === 'analysis') {
-      const code = parts[1], pid = process.env['intake_project_' + code] || code, s = process.env['intake_' + pid];
+      const code = parts[1], pid = readStateRaw('intake_project_' + code) || code, s = readStateRaw('intake_' + pid);
       if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
       return res.end(JSON.stringify({ data: null }));
     }
 
     // GET /agent/structure/:code
     if (req.method === 'GET' && parts[0] === 'structure' && parts[1]) {
-      const code = parts[1], s = process.env['structure_' + code];
+      const code = parts[1], s = readStateRaw('structure_' + code);
       if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
       return res.end(JSON.stringify({ data: null }));
     }
@@ -776,10 +1302,163 @@ if (user.role === 'admin') loadUsers();
     if (req.method === 'POST' && parts[0] === 'structure' && parts[1]) {
       const code = parts[1]; let b2 = '';
       req.on('data', c3 => b2 += c3);
-      req.on('end', () => { try { process.env['structure_' + code] = b2; res.end('{"ok":true}'); } catch(e) { res.end(JSON.stringify({error:e.message})); } });
+      req.on('end', () => { try { writeStateRaw('structure_' + code, b2); res.end('{"ok":true}'); } catch(e) { res.end(JSON.stringify({error:e.message})); } });
       return;
     }
 
+
+// ─── 身份池接口 ───
+
+    // GET /identity-pool/:code - 获取可认领节点列表
+    if (req.method === 'GET' && parts[0] === 'identity-pool' && parts[1]) {
+      const code = parts[1];
+      try {
+        const claimsKey = 'identity_pool_claims_' + code;
+        const claimState = readStateJson(claimsKey) || {};
+        const s = process.env['structure_' + code];
+        if (!s) {
+          const projects = await gpApi('GET', '/api/projects');
+          const project = Array.isArray(projects) ? projects.find(function(item) { return item.code === code || item.id === code; }) : null;
+          if (!project) { return res.end(JSON.stringify({ nodes: [] })); }
+          const dashboard = await gpApi('GET', '/api/projects/' + project.id + '/dashboard');
+          const modules = dashboard?.project?.modules || [];
+          const nodes = modules.map(function(mod) {
+            const claim = claimState['module_' + mod.id] || {};
+            return {
+              nodeId: 'module_' + mod.id,
+              name: mod.name,
+              parentName: '项目模块',
+              taskName: mod.description || '',
+              assignedMemberId: claim.memberId || '',
+              assignedMemberName: claim.memberName || '',
+            };
+          });
+          return res.end(JSON.stringify({ nodes: nodes, fallback: true, source: 'modules' }));
+        }
+        const data = JSON.parse(s);
+        const tree = data.tree || [];
+        const claimableNodes = [];
+        const explicitClaimableLeafNodes = [];
+        const fallbackLeafNodes = [];
+        function walk(nodes) {
+          for (const n of nodes) {
+            const children = tree.filter(function(c) { return c.parentId === n.id; });
+            const isLeaf = children.length === 0;
+            const isRoot = n.parentId === null;
+            if (isLeaf && !isRoot) {
+              const normalized = {
+                nodeId: n.id,
+                name: n.name,
+                parentName: (function() {
+                  const p = tree.find(function(x) { return x.id === n.parentId; });
+                  return p ? p.name : '';
+                })(),
+                taskName: n.data?.taskName || '',
+                assignedMemberId: n.data?.assignedMemberId || '',
+                assignedMemberName: n.data?.assignedMemberName || '',
+              };
+              fallbackLeafNodes.push(normalized);
+              if (n.data && n.data.claimable) {
+                explicitClaimableLeafNodes.push(normalized);
+              }
+            }
+            if (children.length > 0) walk(children);
+          }
+        }
+        const roots = tree.filter(function(n) { return n.parentId === null; });
+        walk(roots);
+        const resultNodes = explicitClaimableLeafNodes.length ? explicitClaimableLeafNodes : fallbackLeafNodes;
+        res.end(JSON.stringify({ nodes: resultNodes, fallback: explicitClaimableLeafNodes.length === 0 }));
+      } catch(e) {
+        res.end(JSON.stringify({ nodes: [], error: e.message }));
+      }
+      return;
+    }
+
+    // POST /identity-pool/:code/claim - 成员认领节点
+    if (req.method === 'POST' && parts[0] === 'identity-pool' && parts[2] === 'claim') {
+      const code = parts[1];
+      let body = '';
+      req.on('data', function(c) { body += c; });
+      req.on('end', function() {
+        try {
+          const { nodeId, memberId, memberName } = JSON.parse(body);
+          if (!nodeId || !memberId) {
+            res.writeHead(400);
+            return res.end(JSON.stringify({ error: '缺少 nodeId 或 memberId' }));
+          }
+          const s = process.env['structure_' + code];
+          if (s) {
+            const data = JSON.parse(s);
+            const tree = data.tree || [];
+            const node = tree.find(function(n) { return n.id === nodeId; });
+            if (!node) {
+              res.writeHead(404);
+              return res.end(JSON.stringify({ error: '节点不存在' }));
+            }
+            if (!node.data) node.data = {};
+            for (const n of tree) {
+              if (n.data && n.data.assignedMemberId === memberId && n.id !== nodeId) {
+                n.data.assignedMemberId = '';
+                n.data.assignedMemberName = '';
+              }
+            }
+            node.data.assignedMemberId = memberId;
+            node.data.assignedMemberName = memberName || '';
+            data.updatedAt = new Date().toISOString();
+            process.env['structure_' + code] = JSON.stringify(data);
+            return res.end(JSON.stringify({ ok: true, nodeId: nodeId, memberId: memberId, memberName: memberName }));
+          }
+          const claimsKey = 'identity_pool_claims_' + code;
+          const claimState = process.env[claimsKey] ? JSON.parse(process.env[claimsKey]) : {};
+          Object.keys(claimState).forEach(function(key) {
+            if (claimState[key] && claimState[key].memberId === memberId && key !== nodeId) {
+              delete claimState[key];
+            }
+          });
+          claimState[nodeId] = { memberId: memberId, memberName: memberName || '' };
+          writeStateJson(claimsKey, claimState);
+          res.end(JSON.stringify({ ok: true, nodeId: nodeId, memberId: memberId, memberName: memberName, source: 'modules' }));
+        } catch(e) {
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // POST /identity-pool/:code/release - 成员释放节点身份
+    if (req.method === 'POST' && parts[0] === 'identity-pool' && parts[2] === 'release') {
+      const code = parts[1];
+      let body = '';
+      req.on('data', function(c) { body += c; });
+      req.on('end', function() {
+        try {
+          const { nodeId } = JSON.parse(body);
+          const s = process.env['structure_' + code];
+          if (s) {
+            const data = JSON.parse(s);
+            const tree = data.tree || [];
+            const node = tree.find(function(n) { return n.id === nodeId; });
+            if (!node) { return res.end(JSON.stringify({ error: '节点不存在' })); }
+            if (node.data) {
+              node.data.assignedMemberId = '';
+              node.data.assignedMemberName = '';
+            }
+            data.updatedAt = new Date().toISOString();
+            process.env['structure_' + code] = JSON.stringify(data);
+            return res.end(JSON.stringify({ ok: true, nodeId: nodeId }));
+          }
+          const claimsKey = 'identity_pool_claims_' + code;
+          const claimState = process.env[claimsKey] ? JSON.parse(process.env[claimsKey]) : {};
+          delete claimState[nodeId];
+          process.env[claimsKey] = JSON.stringify(claimState);
+          res.end(JSON.stringify({ ok: true, nodeId: nodeId, source: 'modules' }));
+        } catch(e) {
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
 
 // 404
     res.writeHead(404);

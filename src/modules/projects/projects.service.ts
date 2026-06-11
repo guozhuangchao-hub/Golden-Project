@@ -4,7 +4,7 @@ import { constants as fsConstants } from 'fs';
 import { basename, extname, isAbsolute, join, normalize, relative } from 'path';
 import { pathToFileURL } from 'url';
 import { execFile } from 'child_process';
-import { MemberRole, MemberStatus, NotificationChannel, ProjectStatus, UserStatus } from '@prisma/client';
+import { MemberRole, MemberStatus, NotificationChannel, Prisma, ProjectStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BootstrapProjectDto } from './dto/bootstrap-project.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -20,6 +20,12 @@ type ProjectFileItem = {
   size: number;
   sizeLabel: string;
   updatedAt: string;
+};
+
+type ProjectRuntimeStatePayload = {
+  structureTree?: unknown;
+  identityClaims?: unknown;
+  intakeSnapshot?: unknown;
 };
 
 @Injectable()
@@ -437,6 +443,78 @@ export class ProjectsService {
     };
   }
 
+  private buildStructureSeed(projectName: string, modules: Array<{ id?: string; name?: string; desc?: string }>) {
+    const rootId = `seed_root_${Date.now()}`;
+    return {
+      tree: [
+        {
+          id: rootId,
+          name: projectName || '项目结构',
+          parentId: null,
+          sortOrder: 0,
+          data: {
+            taskName: '',
+            taskTime: '',
+            taskPerson: '',
+            claimable: false,
+            assignedMemberId: '',
+            assignedMemberName: '',
+          },
+        },
+        ...modules.map((module, index) => ({
+          id: module.id ? `seed_mod_${module.id}` : `seed_mod_${index + 1}`,
+          name: module.name || `模块${index + 1}`,
+          parentId: rootId,
+          sortOrder: index + 1,
+          data: {
+            taskName: module.desc || '',
+            taskTime: '',
+            taskPerson: '',
+            claimable: true,
+            assignedMemberId: '',
+            assignedMemberName: '',
+          },
+        })),
+      ],
+      structureSource: 'intake_sync',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async upsertRuntimeState(projectId: string, payload: ProjectRuntimeStatePayload) {
+    const toJsonValue = (value: unknown) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (value === null) {
+        return Prisma.JsonNull;
+      }
+      return value as Prisma.InputJsonValue;
+    };
+
+    const updateData: Prisma.ProjectRuntimeStateUpdateInput = {};
+    if (payload.structureTree !== undefined) {
+      updateData.structureTree = toJsonValue(payload.structureTree);
+    }
+    if (payload.identityClaims !== undefined) {
+      updateData.identityClaims = toJsonValue(payload.identityClaims);
+    }
+    if (payload.intakeSnapshot !== undefined) {
+      updateData.intakeSnapshot = toJsonValue(payload.intakeSnapshot);
+    }
+
+    return this.prisma.projectRuntimeState.upsert({
+      where: { projectId },
+      update: updateData,
+      create: {
+        projectId,
+        structureTree: toJsonValue(payload.structureTree),
+        identityClaims: toJsonValue(payload.identityClaims),
+        intakeSnapshot: toJsonValue(payload.intakeSnapshot),
+      },
+    });
+  }
+
   private buildProjectInfoMarkdown(params: {
     projectName: string;
     projectCode: string;
@@ -761,6 +839,10 @@ export class ProjectsService {
       _count: { _all: true },
     });
 
+    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
+      where: { projectId: projectRecord.id },
+    });
+
     return {
       project,
       tasks,
@@ -772,7 +854,30 @@ export class ProjectsService {
       events,
       pendingEvents,
       eventStats,
+      runtimeState,
     };
+  }
+
+  async getProjectRuntimeState(identifier: string) {
+    const project = await this.resolveProjectByIdentifier(identifier);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return this.prisma.projectRuntimeState.findUnique({
+      where: { projectId: project.id },
+    });
+  }
+
+  async updateProjectRuntimeState(identifier: string, payload: ProjectRuntimeStatePayload) {
+    const project = await this.resolveProjectByIdentifier(identifier);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return this.upsertRuntimeState(project.id, payload);
   }
 
   update(id: string, dto: UpdateProjectDto) {
@@ -863,6 +968,15 @@ export class ProjectsService {
           });
         }
       }
+    }
+
+    if (dto.modules || dto.members || dto.tasks || dto.projectName || dto.description || dto.location) {
+      const projectName = dto.projectName || projectRecord.name;
+      const structureTree = this.buildStructureSeed(projectName, dto.modules || []);
+      await this.upsertRuntimeState(pid, {
+        structureTree,
+        intakeSnapshot: dto,
+      });
     }
 
     return { ok: true, projectId: pid };

@@ -13,7 +13,7 @@
  *   name: string,
  *   parentId: string | null,
  *   sortOrder: number,
- *   data: { taskName, taskTime, taskPerson }
+ *   data: { taskName, taskTime, taskPerson, claimable, assignedMemberId, assignedMemberName }
  * }
  */
 let treeData = [];
@@ -79,7 +79,7 @@ function initEmptyTree(projName) {
       name: projName || '项目名称',
       parentId: null,
       sortOrder: 0,
-      data: { taskName: '', taskTime: '', taskPerson: '' },
+      data: { taskName: '', taskTime: '', taskPerson: '', claimable: false, assignedMemberId: '', assignedMemberName: '' },
     },
   ];
   dirty = false;
@@ -107,7 +107,7 @@ function addNode(parentId) {
     name: getDefaultName(level),
     parentId: parentId,
     sortOrder: children.length,
-    data: { taskName: '', taskTime: '', taskPerson: '' },
+    data: { taskName: '', taskTime: '', taskPerson: '', claimable: false, assignedMemberId: '', assignedMemberName: '' },
   };
   treeData.push(newNode);
   dirty = true;
@@ -343,7 +343,7 @@ function renameNode(id, name) {
 function updateNodeData(id, field, value) {
   const node = getNode(id);
   if (!node) return;
-  if (!node.data) node.data = { taskName: '', taskTime: '', taskPerson: '' };
+  if (!node.data) node.data = { taskName: '', taskTime: '', taskPerson: '', claimable: false, assignedMemberId: '', assignedMemberName: '' };
   node.data[field] = value;
   dirty = true;
 }
@@ -560,10 +560,49 @@ function renderCard(node) {
     updateNodeData(node.id, 'taskTime', val);
   }));
 
-  // Task person field
-  body.appendChild(createCardField('任务人员', node.data?.taskPerson || '', function (val) {
-    updateNodeData(node.id, 'taskPerson', val);
-  }));
+  // Task person field (readonly - auto-filled when member claims this node)
+  const assignedName = node.data?.assignedMemberName || node.data?.taskPerson || '';
+  const personDisplay = document.createElement('div');
+  personDisplay.className = 'structure-card-field';
+  const pLabel = document.createElement('span');
+  pLabel.className = 'structure-card-label';
+  pLabel.textContent = '任务人员';
+  const pValue = document.createElement('div');
+  pValue.className = 'structure-card-value readonly';
+  pValue.style.color = assignedName ? '' : 'var(--muted)';
+  pValue.textContent = assignedName || '待成员认领';
+  personDisplay.appendChild(pLabel);
+  personDisplay.appendChild(pValue);
+  body.appendChild(personDisplay);
+
+  // Claimable toggle (only for non-root nodes)
+  if (node.parentId !== null) {
+    const toggleRow = document.createElement('div');
+    toggleRow.className = 'structure-card-field structure-card-toggle';
+
+    const toggleLabel = document.createElement('span');
+    toggleLabel.className = 'structure-card-label';
+    toggleLabel.textContent = '可被认领';
+
+    const toggleWrapper = document.createElement('label');
+    toggleWrapper.className = 'toggle-switch';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!(node.data?.claimable);
+    checkbox.addEventListener('change', function () {
+      updateNodeData(node.id, 'claimable', this.checked);
+    });
+
+    const slider = document.createElement('span');
+    slider.className = 'toggle-slider';
+
+    toggleWrapper.appendChild(checkbox);
+    toggleWrapper.appendChild(slider);
+    toggleRow.appendChild(toggleLabel);
+    toggleRow.appendChild(toggleWrapper);
+    body.appendChild(toggleRow);
+  }
 
   card.appendChild(body);
 
@@ -794,7 +833,7 @@ function applyDashboardData(data, projectCode) {
       name: projectName,
       parentId: null,
       sortOrder: 0,
-      data: { taskName: '', taskTime: '', taskPerson: '' },
+      data: { taskName: '', taskTime: '', taskPerson: '', claimable: false, assignedMemberId: '', assignedMemberName: '' },
     },
   ];
 
@@ -811,7 +850,7 @@ function applyDashboardData(data, projectCode) {
       data: {
         taskName: tasks[0]?.name || mod.description || '',
         taskTime: tasks[0]?.dueTime || tasks[0]?.startTime || '',
-        taskPerson: mod.leaderMember?.user?.name || '',
+        taskPerson: '', assignedMemberId: (mod.leaderMember?.id || ''), assignedMemberName: (mod.leaderMember?.user?.name || ''), claimable: (!!mod.leaderMember?.id),
       },
     });
   }
@@ -841,7 +880,7 @@ function convertLegacyNodes(nodes, edges) {
   const nodeMap = {};
 
   // Find root
-  const rootNode = nodes.find((n) => n.type === 'root' || (n.parentId === null || n.parentId === undefined));
+  const rootNode = nodes.find((n) => n.type === root || (n.parentId === null || n.parentId === undefined));
   if (!rootNode) return [];
 
   const rootId = generateId();
@@ -854,6 +893,9 @@ function convertLegacyNodes(nodes, edges) {
       taskName: '',
       taskTime: '',
       taskPerson: '',
+      claimable: false,
+      assignedMemberId: '',
+      assignedMemberName: '',
     },
   });
   nodeMap[rootNode.id] = rootId;
@@ -879,7 +921,7 @@ function convertLegacyNodes(nodes, edges) {
         data: {
           taskName: childNode.data?.description || '',
           taskTime: '',
-          taskPerson: childNode.data?.leader || '',
+          taskPerson: '', assignedMemberId: '', assignedMemberName: '', claimable: false,
         },
       });
       nodeMap[childNode.id] = newId;

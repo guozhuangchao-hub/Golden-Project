@@ -70,6 +70,11 @@ export class ProjectsController {
     return this.projectsService.getProjectFiles(id);
   }
 
+  @Get(':id/runtime-state')
+  getProjectRuntimeState(@Param('id') id: string) {
+    return this.projectsService.getProjectRuntimeState(id);
+  }
+
   @Get(':id/notifications')
   getProjectNotifications(@Param('id') id: string) {
     return this.projectsService.getProjectNotifications(id);
@@ -103,6 +108,11 @@ export class ProjectsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
     return this.projectsService.update(id, dto);
+  }
+
+  @Patch(':id/runtime-state')
+  updateRuntimeState(@Param('id') id: string, @Body() dto: any) {
+    return this.projectsService.updateProjectRuntimeState(id, dto);
   }
 
   @Post(':id/intake-sync')
