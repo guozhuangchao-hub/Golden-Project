@@ -3,6 +3,8 @@ import { access } from 'fs/promises';
 import { constants as fsConstants } from 'fs';
 import { MemberRole, MemberStatus, NotificationChannel, ProjectStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProjectMembersService } from '../project-members/project-members.service';
+import { ProjectModulesService } from '../project-modules/project-modules.service';
 import { ProjectDashboardService } from './project-dashboard.service';
 import { ProjectFilesService } from './project-files.service';
 import { IntakeSyncDto } from './dto/intake-sync.dto';
@@ -25,21 +27,10 @@ export class ProjectsService {
     private readonly projectFilesService: ProjectFilesService,
     private readonly projectIntakeSyncService: ProjectIntakeSyncService,
     private readonly projectLifecycleService: ProjectLifecycleService,
+    private readonly projectMembersService: ProjectMembersService,
+    private readonly projectModulesService: ProjectModulesService,
     private readonly projectRuntimeStateService: ProjectRuntimeStateService,
   ) {}
-
-  private buildProjectLocalEmail(projectCode: string | null | undefined, name: string) {
-    const safeProject = (projectCode || 'golden-project')
-      .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    const safeName = name
-      .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    return `${safeProject || 'project'}-${safeName || 'member'}@project.local`;
-  }
 
   private async pathExists(targetPath: string) {
     try {
@@ -142,36 +133,15 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    const modules = await this.prisma.projectModule.findMany({
-      where: {
-        projectId: project.id,
-        id: { in: moduleIds },
-      },
-      select: { id: true },
-    });
-
-    if (modules.length !== moduleIds.length) {
+    const modules = await this.projectModulesService.findProjectModules(project.id);
+    const validModuleIds = new Set(modules.map((module) => module.id));
+    if (moduleIds.some((moduleId) => !validModuleIds.has(moduleId))) {
       throw new BadRequestException('Module list contains invalid module id');
     }
 
-    await this.prisma.$transaction(
-      moduleIds.map((moduleId, index) =>
-        this.prisma.projectModule.update({
-          where: { id: moduleId },
-          data: { sortOrder: index + 1 },
-        }),
-      ),
-    );
+    await this.projectModulesService.reorderProjectModules(moduleIds);
 
-    return this.prisma.projectModule.findMany({
-      where: { projectId: project.id },
-      include: {
-        leaderMember: {
-          include: { user: true },
-        },
-      },
-      orderBy: { sortOrder: 'asc' },
-    });
+    return this.projectModulesService.findProjectModules(project.id);
   }
 
   async updateModule(
@@ -185,12 +155,7 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    const projectModule = await this.prisma.projectModule.findFirst({
-      where: {
-        id: moduleId,
-        projectId: project.id,
-      },
-    });
+    const projectModule = await this.projectModulesService.findProjectModuleById(project.id, moduleId);
 
     if (!projectModule) {
       throw new NotFoundException('Project module not found');
@@ -203,71 +168,21 @@ export class ProjectsService {
       if (!leaderName) {
         leaderMemberId = null;
       } else {
-        let leaderMember = await this.prisma.projectMember.findFirst({
-          where: {
-            projectId: project.id,
-            user: {
-              name: leaderName,
-            },
-          },
-          include: { user: true },
+        const leaderMember = await this.projectMembersService.ensureNamedMember({
+          projectId: project.id,
+          projectCode: project.code,
+          name: leaderName,
+          role: MemberRole.LEADER,
+          title: `${projectModule.name}负责人`,
+          remark: '由项目结构页岗位调整加入',
         });
-
-        if (!leaderMember) {
-          const email = this.buildProjectLocalEmail(project.code, leaderName);
-          const user = await this.prisma.user.upsert({
-            where: { email },
-            update: {
-              name: leaderName,
-              status: UserStatus.ACTIVE,
-            },
-            create: {
-              name: leaderName,
-              email,
-              status: UserStatus.ACTIVE,
-              remark: '由项目结构页岗位调整自动创建',
-            },
-          });
-
-          leaderMember = await this.prisma.projectMember.upsert({
-            where: {
-              projectId_userId: {
-                projectId: project.id,
-                userId: user.id,
-              },
-            },
-            update: {
-              role: MemberRole.LEADER,
-              status: MemberStatus.ACTIVE,
-              title: `${projectModule.name}负责人`,
-            },
-            create: {
-              projectId: project.id,
-              userId: user.id,
-              role: MemberRole.LEADER,
-              status: MemberStatus.ACTIVE,
-              title: `${projectModule.name}负责人`,
-              remark: '由项目结构页岗位调整加入',
-            },
-            include: { user: true },
-          });
-        }
-
         leaderMemberId = leaderMember.id;
       }
     }
 
-    return this.prisma.projectModule.update({
-      where: { id: projectModule.id },
-      data: {
-        description: dto.description,
-        leaderMemberId,
-      },
-      include: {
-        leaderMember: {
-          include: { user: true },
-        },
-      },
+    return this.projectModulesService.updateProjectModule(projectModule.id, {
+      description: dto.description,
+      leaderMemberId,
     });
   }
 

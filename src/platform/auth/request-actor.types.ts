@@ -21,5 +21,7 @@ export type PermissionMetadata = {
   projectParam?: string;
   taskParam?: string;
   eventParam?: string;
+  riskParam?: string;
+  proposalParam?: string;
   resourceIdParam?: string;
 };

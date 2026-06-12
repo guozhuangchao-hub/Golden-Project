@@ -8,31 +8,14 @@ import {
   VisibilityScope,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  ExtractedSignal,
+  ExtractedSignalPayload,
+  SignalContext,
+  SignalInputMessage,
+} from './ops-signals.types';
 
-type SignalInputMessage = {
-  sourceMessageId: string;
-  sourceChannel?: string | null;
-  senderName?: string | null;
-  content: string;
-  receivedAt: Date;
-};
-
-type SignalContext = {
-  projectId: string;
-  sourceType: EventSourceType;
-  moduleNames?: string[];
-  memberNames?: string[];
-};
-
-export type ExtractedSignal = {
-  sourceMessageId: string;
-  sourceChannel?: string | null;
-  senderName?: string | null;
-  signalType: MessageSignalType;
-  summary: string;
-  confidence: number;
-  payload: Record<string, any>;
-};
+type SavedSignal = Awaited<ReturnType<PrismaService['messageSignal']['create']>>;
 
 @Injectable()
 export class OpsSignalsService {
@@ -66,7 +49,7 @@ export class OpsSignalsService {
   }
 
   async persistSignals(context: SignalContext, signals: ExtractedSignal[]) {
-    const saved: any[] = [];
+    const saved: SavedSignal[] = [];
     for (const signal of signals) {
       const duplicate = await this.prisma.messageSignal.findFirst({
         where: {
@@ -215,6 +198,7 @@ export class OpsSignalsService {
       sourceChannel: message.sourceChannel,
       senderName: message.senderName,
       signalType: MessageSignalType.TASK_CANDIDATE,
+      eventType: this.eventTypeForSignal(MessageSignalType.TASK_CANDIDATE),
       summary: title,
       confidence: 0.72,
       payload: {
@@ -238,6 +222,7 @@ export class OpsSignalsService {
       sourceChannel: message.sourceChannel,
       senderName: message.senderName,
       signalType: MessageSignalType.RISK_SIGNAL,
+      eventType: this.eventTypeForSignal(MessageSignalType.RISK_SIGNAL),
       summary: text.length > 80 ? `${text.slice(0, 77)}...` : text,
       confidence: 0.78,
       payload: {
@@ -257,6 +242,7 @@ export class OpsSignalsService {
       sourceChannel: message.sourceChannel,
       senderName: message.senderName,
       signalType: MessageSignalType.HELP_REQUEST,
+      eventType: this.eventTypeForSignal(MessageSignalType.HELP_REQUEST),
       summary: text.length > 80 ? `${text.slice(0, 77)}...` : text,
       confidence: 0.84,
       payload: {
@@ -275,6 +261,7 @@ export class OpsSignalsService {
       sourceChannel: message.sourceChannel,
       senderName: message.senderName,
       signalType: MessageSignalType.PROGRESS_UPDATE,
+      eventType: this.eventTypeForSignal(MessageSignalType.PROGRESS_UPDATE),
       summary: text.length > 80 ? `${text.slice(0, 77)}...` : text,
       confidence: 0.67,
       payload: {
@@ -292,6 +279,7 @@ export class OpsSignalsService {
       sourceChannel: message.sourceChannel,
       senderName: message.senderName,
       signalType: MessageSignalType.CONTACT_UPDATE,
+      eventType: this.eventTypeForSignal(MessageSignalType.CONTACT_UPDATE),
       summary: text.length > 80 ? `${text.slice(0, 77)}...` : text,
       confidence: 0.63,
       payload: {
@@ -303,16 +291,18 @@ export class OpsSignalsService {
   }
 
   private buildProposedChanges(signal: ExtractedSignal) {
+    const payload: ExtractedSignalPayload = signal.payload || {};
+
     if (signal.signalType === MessageSignalType.TASK_CANDIDATE) {
       return {
         task: {
-          title: signal.payload.title,
-          description: signal.payload.description,
-          moduleName: signal.payload.moduleName,
-          ownerName: signal.payload.ownerName,
-          assistantName: signal.payload.assistantName,
-          dueTime: signal.payload.dueTime,
-          priority: signal.payload.priority,
+          title: payload.title,
+          description: payload.description,
+          moduleName: payload.moduleName,
+          ownerName: payload.ownerName,
+          assistantName: payload.assistantName,
+          dueTime: payload.dueTime,
+          priority: payload.priority,
         },
       };
     }
@@ -321,7 +311,7 @@ export class OpsSignalsService {
       signal: {
         type: signal.signalType,
         summary: signal.summary,
-        payload: signal.payload,
+        payload,
       },
     };
   }

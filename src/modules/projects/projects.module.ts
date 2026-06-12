@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ProjectMembersModule } from '../project-members/project-members.module';
+import { ProjectModulesModule } from '../project-modules/project-modules.module';
 import { AppConfigModule } from '../../platform/config/app-config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ProjectDashboardService } from './project-dashboard.service';
@@ -10,7 +12,7 @@ import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
 
 @Module({
-  imports: [AppConfigModule, PrismaModule],
+  imports: [AppConfigModule, PrismaModule, ProjectMembersModule, ProjectModulesModule],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,

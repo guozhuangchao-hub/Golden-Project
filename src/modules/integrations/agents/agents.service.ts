@@ -915,10 +915,9 @@ export class AgentsService {
       args.push('--thinking', params.config.thinking);
     }
 
-    const env = {
-      ...process.env,
-      HOME: params.config.home || this.defaultRealHome(),
-    };
+    const env = this.appConfigService.getAgentChildProcessEnv({
+      home: params.config.home || this.defaultRealHome(),
+    });
 
     const output = await execFileAsync(command, args, {
       env,

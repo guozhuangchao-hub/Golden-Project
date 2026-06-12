@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { AIReportType, RiskSeverity, TaskStatus } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
+import { RiskSeverity } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ExtractedSignalPayload } from '../ops-signals/ops-signals.types';
 import { RisksService } from '../risks/risks.service';
+import { WorkerRepository } from './worker.repository';
 
 @Injectable()
 export class WorkerService implements OnModuleInit, OnModuleDestroy {
@@ -11,9 +12,9 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
   private riskTimer?: NodeJS.Timeout;
 
   constructor(
-    private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly risksService: RisksService,
+    private readonly workerRepository: WorkerRepository,
   ) {}
 
   onModuleInit() {
@@ -39,28 +40,8 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
 
   async runReminderCycle() {
     try {
-      const overdueTasks = await this.prisma.task.findMany({
-        where: {
-          dueTime: { lt: new Date() },
-          status: {
-            in: [TaskStatus.PENDING_CONFIRMATION, TaskStatus.CONFIRMED, TaskStatus.IN_PROGRESS],
-          },
-        },
-        select: { id: true },
-      });
-
-      const staleTasks = await this.prisma.task.findMany({
-        where: {
-          status: {
-            in: [TaskStatus.CONFIRMED, TaskStatus.IN_PROGRESS],
-          },
-          OR: [
-            { lastProgressAt: null, updatedAt: { lt: new Date(Date.now() - 12 * 60 * 60 * 1000) } },
-            { lastProgressAt: { lt: new Date(Date.now() - 12 * 60 * 60 * 1000) } },
-          ],
-        },
-        select: { id: true },
-      });
+      const overdueTasks = await this.workerRepository.findOverdueTaskIds();
+      const staleTasks = await this.workerRepository.findStaleTaskIds();
 
       let remindersCreated = 0;
       for (const task of overdueTasks) {
@@ -88,56 +69,12 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
 
   async runDailyRiskCycle() {
     try {
-      const projects = await this.prisma.project.findMany({
-        where: { status: 'ACTIVE' },
-        select: { id: true, name: true },
-      });
+      const projects = await this.workerRepository.findActiveProjects();
 
       const reportDate = this.startOfDay(new Date());
       for (const project of projects) {
-        const [overdueTasks, helpTasks, pendingEvents, signalRisks] = await Promise.all([
-          this.prisma.task.findMany({
-            where: {
-              projectId: project.id,
-              dueTime: { lt: new Date() },
-              status: {
-                in: [TaskStatus.PENDING_CONFIRMATION, TaskStatus.CONFIRMED, TaskStatus.IN_PROGRESS],
-              },
-            },
-            include: {
-              ownerMember: true,
-            },
-          }),
-          this.prisma.task.findMany({
-            where: {
-              projectId: project.id,
-              needsHelp: true,
-              status: {
-                in: [TaskStatus.PENDING_CONFIRMATION, TaskStatus.CONFIRMED, TaskStatus.IN_PROGRESS],
-              },
-            },
-            include: {
-              ownerMember: true,
-            },
-          }),
-          this.prisma.event.findMany({
-            where: {
-              projectId: project.id,
-              status: 'pending_review',
-            },
-          }),
-          this.prisma.messageSignal.findMany({
-            where: {
-              projectId: project.id,
-              signalType: 'RISK_SIGNAL',
-              createdAt: {
-                gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-          }),
-        ]);
+        const [overdueTasks, helpTasks, pendingEvents, signalRisks] =
+          await this.workerRepository.findRiskCycleData(project.id);
 
         for (const task of overdueTasks) {
           await this.risksService.upsertDerivedRisk({
@@ -213,7 +150,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
             severity: this.mapSignalSeverity(signal.payload),
             sourceKind: 'message_signal',
             sourceRefId: signal.id,
-            payload: signal.payload as any,
+            payload: signal.payload as ExtractedSignalPayload,
           });
         }
         await this.risksService.resolveMissingDerivedRisks({
@@ -234,52 +171,23 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
               ? '中'
               : '低';
 
-        await this.prisma.aIReport.upsert({
-          where: {
-            projectId_reportDate_type: {
-              projectId: project.id,
-              reportDate,
-              type: AIReportType.RISK,
-            },
-          },
-          create: {
-            projectId: project.id,
-            reportDate,
-            type: AIReportType.RISK,
-            title: `${project.name} 风险扫描`,
-            summary: `风险等级${riskLevel}，逾期${overdueCount}项，求助${helpCount}项，待确认事项${pendingEventCount}项，群内风险${signalRiskCount}项。`,
-            content: [
-              `风险等级：${riskLevel}`,
-              `逾期任务：${overdueCount}`,
-              `求助中任务：${helpCount}`,
-              `待确认事项：${pendingEventCount}`,
-              `群内风险信号：${signalRiskCount}`,
-            ].join('\n'),
-            generatedBy: 'phase-three-worker',
-            sourceData: {
-              overdueCount,
-              helpCount,
-              pendingEventCount,
-              signalRiskCount,
-            },
-          },
-          update: {
-            title: `${project.name} 风险扫描`,
-            summary: `风险等级${riskLevel}，逾期${overdueCount}项，求助${helpCount}项，待确认事项${pendingEventCount}项，群内风险${signalRiskCount}项。`,
-            content: [
-              `风险等级：${riskLevel}`,
-              `逾期任务：${overdueCount}`,
-              `求助中任务：${helpCount}`,
-              `待确认事项：${pendingEventCount}`,
-              `群内风险信号：${signalRiskCount}`,
-            ].join('\n'),
-            generatedBy: 'phase-three-worker',
-            sourceData: {
-              overdueCount,
-              helpCount,
-              pendingEventCount,
-              signalRiskCount,
-            },
+        await this.workerRepository.upsertRiskReport({
+          projectId: project.id,
+          reportDate,
+          title: `${project.name} 风险扫描`,
+          summary: `风险等级${riskLevel}，逾期${overdueCount}项，求助${helpCount}项，待确认事项${pendingEventCount}项，群内风险${signalRiskCount}项。`,
+          content: [
+            `风险等级：${riskLevel}`,
+            `逾期任务：${overdueCount}`,
+            `求助中任务：${helpCount}`,
+            `待确认事项：${pendingEventCount}`,
+            `群内风险信号：${signalRiskCount}`,
+          ].join('\n'),
+          sourceData: {
+            overdueCount,
+            helpCount,
+            pendingEventCount,
+            signalRiskCount,
           },
         });
       }
@@ -296,14 +204,14 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
     return value;
   }
 
-  private extractSignalDescription(payload: unknown, fallback: string) {
+  private extractSignalDescription(payload: ExtractedSignalPayload | unknown, fallback: string) {
     if (payload && typeof payload === 'object' && !Array.isArray(payload) && 'description' in payload) {
       return String((payload as Record<string, unknown>).description || fallback);
     }
     return fallback;
   }
 
-  private mapSignalSeverity(payload: unknown) {
+  private mapSignalSeverity(payload: ExtractedSignalPayload | unknown) {
     const severity =
       payload && typeof payload === 'object' && !Array.isArray(payload) && 'severity' in payload
         ? String((payload as Record<string, unknown>).severity)

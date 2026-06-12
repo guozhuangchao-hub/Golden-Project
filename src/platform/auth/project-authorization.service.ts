@@ -28,6 +28,8 @@ export class ProjectAuthorizationService {
     projectIdentifier?: string | null;
     taskId?: string | null;
     eventId?: string | null;
+    riskId?: string | null;
+    proposalId?: string | null;
   }) {
     if (params.projectIdentifier) {
       const project = await this.prisma.project.findFirst({
@@ -74,6 +76,28 @@ export class ProjectAuthorizationService {
       return { projectId: event.projectId, resourceId: event.id };
     }
 
+    if (params.riskId) {
+      const risk = await this.prisma.riskItem.findUnique({
+        where: { id: params.riskId },
+        select: { id: true, projectId: true },
+      });
+      if (!risk) {
+        throw new NotFoundException('Risk item not found');
+      }
+      return { projectId: risk.projectId, resourceId: risk.id };
+    }
+
+    if (params.proposalId) {
+      const proposal = await this.prisma.feishuTaskProposal.findUnique({
+        where: { id: params.proposalId },
+        select: { id: true, projectId: true },
+      });
+      if (!proposal) {
+        throw new NotFoundException('Proposal not found');
+      }
+      return { projectId: proposal.projectId, resourceId: proposal.id };
+    }
+
     return { projectId: null, resourceId: null };
   }
 
@@ -82,6 +106,8 @@ export class ProjectAuthorizationService {
     projectIdentifier?: string | null;
     taskId?: string | null;
     eventId?: string | null;
+    riskId?: string | null;
+    proposalId?: string | null;
   }): Promise<AuthorizationContext> {
     const resolved = await this.resolveProjectId(params);
 
@@ -134,6 +160,8 @@ export class ProjectAuthorizationService {
     projectIdentifier?: string | null;
     taskId?: string | null;
     eventId?: string | null;
+    riskId?: string | null;
+    proposalId?: string | null;
   }) {
     const context = await this.buildAuthorizationContext(params);
 

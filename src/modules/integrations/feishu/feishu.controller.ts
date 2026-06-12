@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { RequireProjectPermission } from '../../../platform/auth/permission.decorator';
 import { UpsertFeishuSettingDto } from './dto/upsert-feishu-setting.dto';
 import { FeishuService } from './feishu.service';
 
@@ -7,11 +8,19 @@ export class FeishuController {
   constructor(private readonly feishuService: FeishuService) {}
 
   @Get('projects/:projectId/setting')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   getProjectSetting(@Param('projectId') projectId: string) {
     return this.feishuService.getProjectSetting(projectId);
   }
 
   @Patch('projects/:projectId/setting')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   upsertProjectSetting(
     @Param('projectId') projectId: string,
     @Body() dto: UpsertFeishuSettingDto,
@@ -20,16 +29,28 @@ export class FeishuController {
   }
 
   @Get('projects/:projectId/messages')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   listMessages(@Param('projectId') projectId: string) {
     return this.feishuService.listInboundMessages(projectId);
   }
 
   @Get('projects/:projectId/proposals')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   listProposals(@Param('projectId') projectId: string) {
     return this.feishuService.listProposals(projectId);
   }
 
   @Post('projects/:projectId/digest')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   runDigest(@Param('projectId') projectId: string) {
     return this.feishuService.runDigestForProject(projectId);
   }
@@ -45,19 +66,12 @@ export class FeishuController {
   }
 
   @Post('proposals/:proposalId/approve')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    proposalParam: 'proposalId',
+    resourceIdParam: 'proposalId',
+  })
   approveProposal(@Param('proposalId') proposalId: string) {
-    return this.feishuService.handleCallbackWebhook({
-      header: {
-        event_type: 'card.action.trigger',
-      },
-      event: {
-        action: {
-          value: {
-            proposalId,
-            decision: 'approve',
-          },
-        },
-      },
-    });
+    return this.feishuService.approveProposal(proposalId);
   }
 }

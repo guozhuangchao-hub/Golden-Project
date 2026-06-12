@@ -64,6 +64,10 @@ export class ProjectPermissionGuard implements CanActivate {
         eventId: metadata.eventParam
           ? String(request.params[metadata.eventParam] ?? '')
           : undefined,
+        riskId: metadata.riskParam ? String(request.params[metadata.riskParam] ?? '') : undefined,
+        proposalId: metadata.proposalParam
+          ? String(request.params[metadata.proposalParam] ?? '')
+          : undefined,
       });
 
       request.actor = actor;

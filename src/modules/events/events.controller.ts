@@ -10,11 +10,19 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Post()
+  @RequireProjectPermission({
+    action: 'PROJECT_RUNTIME_WRITE',
+    projectParam: 'projectId',
+  })
   create(@Param('projectId') projectId: string, @Body() dto: CreateEventDto) {
     return this.eventsService.create(projectId, dto);
   }
 
   @Post('ingest')
+  @RequireProjectPermission({
+    action: 'PROJECT_RUNTIME_WRITE',
+    projectParam: 'projectId',
+  })
   ingest(@Param('projectId') projectId: string, @Body() dto: CreateEventDto) {
     return this.eventsService.create(projectId, dto);
   }

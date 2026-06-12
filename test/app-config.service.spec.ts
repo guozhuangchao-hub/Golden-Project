@@ -64,4 +64,29 @@ describe('AppConfigService', () => {
     expect(service.getFeishuAppSecret()).toBe('feishu-app-secret');
     expect(service.getHomeDir()).toBe('/Users/tester');
   });
+
+  it('builds a child-process env from an explicit whitelist', () => {
+    const configService = {
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          PATH: '/usr/bin:/bin',
+          HOME: '/Users/tester',
+          SHELL: '/bin/zsh',
+          TMPDIR: '/tmp/tester',
+          LANG: 'zh_CN.UTF-8',
+        };
+        return values[key];
+      }),
+    } as unknown as ConfigService;
+
+    const service = new AppConfigService(configService);
+
+    expect(service.getAgentChildProcessEnv({ home: '/Users/override' })).toEqual({
+      PATH: '/usr/bin:/bin',
+      HOME: '/Users/override',
+      SHELL: '/bin/zsh',
+      TMPDIR: '/tmp/tester',
+      LANG: 'zh_CN.UTF-8',
+    });
+  });
 });

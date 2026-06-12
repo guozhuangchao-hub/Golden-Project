@@ -46,39 +46,12 @@ export class MiniAppService {
   }
 
   async getProjectBrief(projectCode: string, memberId?: string) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        OR: [{ id: projectCode }, { code: projectCode }],
-      },
-      include: {
-        modules: {
-          orderBy: { sortOrder: 'asc' },
-        },
-        members: {
-          where: { status: 'ACTIVE' },
-          include: { user: true },
-          orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
-        },
-      },
-    });
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
+    const project = await this.resolveProjectBriefContext(projectCode);
 
     const member = memberId ? await this.resolveMember(memberId) : null;
-    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
-      where: { projectId: project.id },
-    });
+    const runtimeState = await this.getProjectRuntimeState(project.id);
     const tasks = member
-      ? await this.prisma.task.findMany({
-          where: {
-            projectId: project.id,
-            OR: [{ ownerMemberId: member.id }, { assistantMemberId: member.id }],
-          },
-          orderBy: [{ dueTime: 'asc' }, { createdAt: 'desc' }],
-          take: 5,
-        })
+      ? await this.listMemberTasks(project.id, member.id, 5)
       : [];
 
     return {
@@ -108,14 +81,7 @@ export class MiniAppService {
   }
 
   async getProjectContacts(projectCode: string) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        OR: [{ id: projectCode }, { code: projectCode }],
-      },
-    });
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
+    const project = await this.resolveProject(projectCode);
 
     return this.prisma.projectMember.findMany({
       where: {
@@ -131,9 +97,7 @@ export class MiniAppService {
 
   async getIdentityPool(projectCode: string, memberId?: string) {
     const project = await this.resolveProject(projectCode);
-    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
-      where: { projectId: project.id },
-    });
+    const runtimeState = await this.getProjectRuntimeState(project.id);
     const tree = this.getStructureTree(runtimeState?.structureTree);
     const claims = this.getIdentityClaims(runtimeState?.identityClaims);
 
@@ -185,9 +149,7 @@ export class MiniAppService {
       throw new BadRequestException('Project member does not belong to this project');
     }
 
-    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
-      where: { projectId: project.id },
-    });
+    const runtimeState = await this.getProjectRuntimeState(project.id);
     const tree = this.getStructureTree(runtimeState?.structureTree);
     const claims = this.getIdentityClaims(runtimeState?.identityClaims);
 
@@ -243,9 +205,7 @@ export class MiniAppService {
     }
 
     const project = await this.resolveProject(projectCode);
-    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
-      where: { projectId: project.id },
-    });
+    const runtimeState = await this.getProjectRuntimeState(project.id);
     const tree = this.getStructureTree(runtimeState?.structureTree);
     const claims = this.getIdentityClaims(runtimeState?.identityClaims);
 
@@ -363,6 +323,47 @@ export class MiniAppService {
     return project;
   }
 
+  private async resolveProjectBriefContext(projectCode: string) {
+    const project = await this.prisma.project.findFirst({
+      where: {
+        OR: [{ id: projectCode }, { code: projectCode }],
+      },
+      include: {
+        modules: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        members: {
+          where: { status: 'ACTIVE' },
+          include: { user: true },
+          orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+        },
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return project;
+  }
+
+  private getProjectRuntimeState(projectId: string) {
+    return this.prisma.projectRuntimeState.findUnique({
+      where: { projectId },
+    });
+  }
+
+  private listMemberTasks(projectId: string, memberId: string, take?: number) {
+    return this.prisma.task.findMany({
+      where: {
+        projectId,
+        OR: [{ ownerMemberId: memberId }, { assistantMemberId: memberId }],
+      },
+      orderBy: [{ dueTime: 'asc' }, { createdAt: 'desc' }],
+      ...(take ? { take } : {}),
+    });
+  }
+
   private getStructureTree(structureTree: unknown): StructureTreeNode[] {
     if (
       structureTree &&
@@ -395,9 +396,7 @@ export class MiniAppService {
       throw new BadRequestException('memberId or nodeId is required');
     }
 
-    const runtimeState = await this.prisma.projectRuntimeState.findUnique({
-      where: { projectId },
-    });
+    const runtimeState = await this.getProjectRuntimeState(projectId);
     const tree = this.getStructureTree(runtimeState?.structureTree);
     const claims = this.getIdentityClaims(runtimeState?.identityClaims);
 

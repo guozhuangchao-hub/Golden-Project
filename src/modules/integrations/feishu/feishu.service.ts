@@ -153,6 +153,30 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async approveProposal(proposalId: string) {
+    const proposal = await this.prisma.feishuTaskProposal.findUnique({
+      where: { id: proposalId },
+      select: { id: true },
+    });
+    if (!proposal) {
+      throw new Error('Proposal not found');
+    }
+
+    return this.handleCallbackWebhook({
+      header: {
+        event_type: 'card.action.trigger',
+      },
+      event: {
+        action: {
+          value: {
+            proposalId,
+            decision: 'approve',
+          },
+        },
+      },
+    });
+  }
+
   async handleEventWebhook(payload: FeishuEventPayload) {
     if (payload?.challenge) {
       return { challenge: payload.challenge };

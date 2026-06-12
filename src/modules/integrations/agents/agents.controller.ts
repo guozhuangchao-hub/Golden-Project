@@ -11,6 +11,10 @@ export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
 
   @Get('projects/:projectId/integrations/:provider')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   getIntegration(
     @Param('projectId') projectId: string,
     @Param('provider') provider: string,
@@ -31,6 +35,10 @@ export class AgentsController {
   }
 
   @Get('projects/:projectId/events')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   listEvents(
     @Param('projectId') projectId: string,
     @Query('provider') provider?: string,

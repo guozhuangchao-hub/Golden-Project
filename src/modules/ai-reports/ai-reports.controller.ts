@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { RequireProjectPermission } from '../../platform/auth/permission.decorator';
 import { AiReportsService } from './ai-reports.service';
 import { CreateAiReportDto } from './dto/create-ai-report.dto';
 
@@ -7,6 +8,10 @@ export class AiReportsController {
   constructor(private readonly aiReportsService: AiReportsService) {}
 
   @Post()
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   create(@Param('projectId') projectId: string, @Body() dto: CreateAiReportDto) {
     return this.aiReportsService.create(projectId, dto);
   }

@@ -8,6 +8,8 @@ describe('ProjectAuthorizationService', () => {
     projectMember?: any;
     task?: any;
     event?: any;
+    riskItem?: any;
+    feishuTaskProposal?: any;
   }) => {
     const prisma = {
       project: {
@@ -34,6 +36,16 @@ describe('ProjectAuthorizationService', () => {
         findUnique:
           overrides?.event?.findUnique ??
           jest.fn().mockResolvedValue({ id: 'event-1', projectId: 'project-1' }),
+      },
+      riskItem: {
+        findUnique:
+          overrides?.riskItem?.findUnique ??
+          jest.fn().mockResolvedValue({ id: 'risk-1', projectId: 'project-1' }),
+      },
+      feishuTaskProposal: {
+        findUnique:
+          overrides?.feishuTaskProposal?.findUnique ??
+          jest.fn().mockResolvedValue({ id: 'proposal-1', projectId: 'project-1' }),
       },
     };
 
@@ -105,5 +117,29 @@ describe('ProjectAuthorizationService', () => {
     });
 
     expect(result.actorProjectMemberId).toBe('member-3');
+  });
+
+  it('resolves project context from risk ids for admin-style actions', async () => {
+    const service = createService();
+
+    const result = await service.assertAuthorized({
+      actor: { userId: 'user-1' },
+      action: 'TASK_ADMIN_WRITE',
+      riskId: 'risk-1',
+    });
+
+    expect(result.projectId).toBe('project-1');
+  });
+
+  it('resolves project context from proposal ids for agent workflow actions', async () => {
+    const service = createService();
+
+    const result = await service.assertAuthorized({
+      actor: { userId: 'user-1' },
+      action: 'AGENT_WORKFLOW_TRIGGER',
+      proposalId: 'proposal-1',
+    });
+
+    expect(result.projectId).toBe('project-1');
   });
 });
