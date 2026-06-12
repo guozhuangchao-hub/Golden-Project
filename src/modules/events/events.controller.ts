@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { RequireProjectPermission } from '../../platform/auth/permission.decorator';
 import { CreateEventDto } from './dto/create-event.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { ReviewEventDto, UpdateEventStatusDto } from './dto/review-event.dto';
@@ -19,6 +20,10 @@ export class EventsController {
   }
 
   @Post('demo-seed')
+  @RequireProjectPermission({
+    action: 'EVENT_REVIEW',
+    projectParam: 'projectId',
+  })
   seedDemo(@Param('projectId') projectId: string) {
     return this.eventsService.seedDemoEvents(projectId);
   }
@@ -39,21 +44,41 @@ export class EventsController {
   }
 
   @Post(':eventId/confirm')
+  @RequireProjectPermission({
+    action: 'EVENT_REVIEW',
+    projectParam: 'projectId',
+    eventParam: 'eventId',
+  })
   confirm(@Param('eventId') eventId: string, @Body() dto: ReviewEventDto) {
     return this.eventsService.confirm(eventId, dto);
   }
 
   @Post(':eventId/reject')
+  @RequireProjectPermission({
+    action: 'EVENT_REVIEW',
+    projectParam: 'projectId',
+    eventParam: 'eventId',
+  })
   reject(@Param('eventId') eventId: string, @Body() dto: ReviewEventDto) {
     return this.eventsService.reject(eventId, dto);
   }
 
   @Post(':eventId/needs-more-info')
+  @RequireProjectPermission({
+    action: 'EVENT_REVIEW',
+    projectParam: 'projectId',
+    eventParam: 'eventId',
+  })
   needsMoreInfo(@Param('eventId') eventId: string, @Body() dto: ReviewEventDto) {
     return this.eventsService.needsMoreInfo(eventId, dto);
   }
 
   @Patch(':eventId/status')
+  @RequireProjectPermission({
+    action: 'EVENT_REVIEW',
+    projectParam: 'projectId',
+    eventParam: 'eventId',
+  })
   updateStatus(@Param('eventId') eventId: string, @Body() dto: UpdateEventStatusDto) {
     return this.eventsService.updateStatus(eventId, dto);
   }

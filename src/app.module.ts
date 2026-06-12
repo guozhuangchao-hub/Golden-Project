@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { AppAuditModule } from './platform/audit/app-audit.module';
+import { AppAuthModule } from './platform/auth/app-auth.module';
+import { AppConfigModule } from './platform/config/app-config.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { TasksModule } from './modules/tasks/tasks.module';
@@ -14,9 +17,14 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { OpsSignalsModule } from './modules/ops-signals/ops-signals.module';
 import { RisksModule } from './modules/risks/risks.module';
 import { WorkerModule } from './modules/worker/worker.module';
+import { ProjectMembersModule } from './modules/project-members/project-members.module';
+import { ProjectModulesModule } from './modules/project-modules/project-modules.module';
 
 @Module({
   imports: [
+    AppAuditModule,
+    AppAuthModule,
+    AppConfigModule,
     PrismaModule,
     ProjectsModule,
     TasksModule,
@@ -25,6 +33,8 @@ import { WorkerModule } from './modules/worker/worker.module';
     RisksModule,
     AiReportsModule,
     DashboardModule,
+    ProjectMembersModule,
+    ProjectModulesModule,
     UiModule,
     FeishuModule,
     WechatModule,

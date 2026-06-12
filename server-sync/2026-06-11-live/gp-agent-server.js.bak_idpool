@@ -1,0 +1,1247 @@
+require("dotenv").config({path:"/opt/golden-project/.env"});
+
+const http = require('http');
+const https = require('https');
+const crypto = require('crypto');
+const { execSync } = require('child_process');
+
+const PORT = 3003;
+const GP_BASE = 'http://127.0.0.1:3001';
+const DEEPSEEK_KEY = process.env.GP_AGENT_KEY || '';
+const MODEL = 'deepseek-chat';
+const API_URL = 'https://api.deepseek.com/chat/completions';
+const JWT_SECRET = crypto.randomBytes(32).toString('hex');
+
+// Simple user store
+let tokens = {}; // token -> user
+
+const SYSTEM_PROMPT = `你是 Golden Project 的项目管理 Agent，名叫"小爱"。
+
+## 你的能力
+1. 查询项目信息（任务、成员、模块、事件、风险）
+2. 创建和更新任务
+3. 分析项目状态并给出建议
+4. 回答项目相关问题
+
+## 规则
+- 只处理与当前项目相关的事务
+- 所有操作必须通过 GP API 执行
+- 用中文回答，简洁专业`;
+
+function gpApi(method, path, body) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, GP_BASE);
+    const options = {
+      hostname: url.hostname, port: url.port,
+      path: url.pathname + url.search, method,
+      headers: { 'Content-Type': 'application/json' },
+    };
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(data); } });
+    });
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+function callDeepSeek(messages) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Use Hermes CLI instead of direct DeepSeek API
+      const prompt = messages.map(m => (m.role === 'system' ? '[系统] ' : '[用户] ') + m.content).join('\n');
+      const result = require('child_process').execSync(
+        'hermes -q -m ' + JSON.stringify(prompt),
+        { timeout: 120000, maxBuffer: 2 * 1024 * 1024,
+          env: { ...process.env, HERMES_HOME: '/opt/hermes-agent/profiles/gp' }
+        }
+      ).toString().trim();
+      resolve(result);
+    } catch(e) {
+      // Fallback to direct DeepSeek API
+      const https = require('https');
+      const DEEPSEEK_KEY = process.env.GP_AGENT_KEY || '';
+      const API_URL = 'https://api.deepseek.com/chat/completions';
+      const MODEL = 'deepseek-chat';
+      const data = JSON.stringify({ model: MODEL, messages, temperature: 0.3, max_tokens: 2000 });
+      const req = https.request(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(body).choices?.[0]?.message?.content || ''); }
+          catch { reject(new Error('parse error')); }
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    }
+  });
+}
+
+// ─── Auth helpers ───
+function getTokenUser(token) {
+  return tokens[token] || null;
+}
+
+function requireUser(req, res) {
+  const auth = req.headers['authorization'] || '';
+  const token = auth.replace('Bearer ', '');
+  const user = getTokenUser(token);
+  if (!user) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: '请先登录' }));
+    return null;
+  }
+  return user;
+}
+
+// ─── Users (hardcoded from seed data + database users) ───
+const USERS = [
+  { id: 'yh1', name: '赵总', mobile: '13800000001', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh2', name: '陈凯', mobile: '13800000002', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh3', name: '林霄', mobile: '13800000003', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh4', name: '王晴', mobile: '13800000004', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh5', name: '孙涛', mobile: '13800000005', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh6', name: '刘颖', mobile: '13800000006', wechat: '', role: 'admin', password: '123456' },
+  { id: 'yh7', name: '临时工小李', mobile: '13800000007', wechat: '', role: 'member', password: '123456' },
+  { id: 'yh8', name: '临时工阿周', mobile: '13800000008', wechat: '', role: 'member', password: '123456' },
+  { id: 'gw', name: '甘伟文', mobile: '13800000009', wechat: '', role: 'member', password: '123456' },
+  { id: 'ws', name: '王森', mobile: '13800000010', wechat: '', role: 'member', password: '123456' },
+  { id: 'sj', name: '苏杰', mobile: '13800000011', wechat: '', role: 'member', password: '123456' },
+  { id: 'lyh', name: '林永辉', mobile: '13800000012', wechat: '', role: 'member', password: '123456' },
+  { id: 'cst', name: '陈顺婷', mobile: '13800000013', wechat: '', role: 'member', password: '123456' },
+  { id: 'zsl', name: '詹少立', mobile: '13800000014', wechat: '', role: 'member', password: '123456' },
+  { id: 'fjs', name: '傅江水', mobile: '13800000015', wechat: '', role: 'member', password: '123456' },
+  { id: 'zyx', name: '张艳欣', mobile: '13800000016', wechat: '', role: 'member', password: '123456' },
+  { id: 'qyy', name: '邱莹莹', mobile: '13800000017', wechat: '', role: 'member', password: '123456' },
+  { id: 'hcy', name: '黄辰阳', mobile: '13800000018', wechat: '', role: 'member', password: '123456' },
+  { id: 'cjc', name: '陈俊超', mobile: '13800000019', wechat: '', role: 'member', password: '123456' },
+];
+
+// ─── HTTP Server ───
+const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
+  const url = new URL(req.url, 'http://localhost');
+  const parts = url.pathname.split('/').filter(Boolean);
+
+  try {
+    // === AUTH ENDPOINTS ===
+
+    // POST /auth/login
+    if (req.method === 'POST' && parts.join('/') === 'auth/login') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { mobile, password } = JSON.parse(body);
+        const user = USERS.find(u => u.mobile === mobile && u.password === password);
+        if (!user) {
+          res.writeHead(401);
+          return res.end(JSON.stringify({ error: '手机号或密码错误' }));
+        }
+        const token = crypto.randomBytes(24).toString('hex');
+        tokens[token] = user;
+        res.end(JSON.stringify({ token, user: { id: user.id, name: user.name, mobile: user.mobile, wechat: user.wechat || '', role: user.role } }));
+      });
+      return;
+    }
+
+    // GET /auth/me
+    if (req.method === 'GET' && parts.join('/') === 'auth/me') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      return res.end(JSON.stringify({ user: { id: user.id, name: user.name, mobile: user.mobile, role: user.role } }));
+    }
+
+    // GET /login - Login page
+    if (req.method === 'GET' && (parts[0] === 'login' || parts.join('/') === '')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Golden Project 登录</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { background: #1e293b; border-radius: 16px; padding: 40px; width: 380px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
+h1 { font-size: 24px; margin-bottom: 8px; }
+p { color: #94a3b8; margin-bottom: 24px; font-size: 14px; }
+label { display: block; font-size: 13px; margin-bottom: 6px; color: #cbd5e1; }
+input { width: 100%; padding: 12px 16px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 15px; margin-bottom: 16px; outline: none; }
+input:focus { border-color: #3b82f6; }
+button { width: 100%; padding: 12px; background: #3b82f6; border: none; border-radius: 8px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+button:hover { background: #2563eb; }
+.error { color: #ef4444; font-size: 13px; margin-top: 12px; display: none; }
+.info { color: #94a3b8; font-size: 12px; margin-top: 12px; text-align: center; }
+</style></head>
+<body>
+<div class="card">
+<h1>Golden Project</h1>
+<p>活动项目管理平台</p>
+<label>手机号</label>
+<input type="text" id="mobile" placeholder="手机号">
+<label>密码</label>
+<input type="password" id="password" placeholder="密码">
+<button onclick="login()">登录</button>
+<div class="error" id="error"></div>
+</div>
+<script>
+function login() {
+  const mobile = document.getElementById('mobile').value;
+  const password = document.getElementById('password').value;
+  const err = document.getElementById('error');
+  err.style.display = 'none';
+  fetch('/agent/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mobile, password })
+  }).then(r => r.json()).then(d => {
+    if (d.error) { err.textContent = d.error; err.style.display = 'block'; return; }
+    localStorage.setItem('gp_token', d.token);
+    localStorage.setItem('gp_user', JSON.stringify(d.user));
+    window.location.href = '/console/dashboard';
+  }).catch(e => { err.textContent = '网络错误'; err.style.display = 'block'; });
+}
+document.getElementById('mobile').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.getElementById('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+</script></body></html>`);
+    }
+
+    // GET /account - Account management page (personal + admin)
+    if (req.method === 'GET' && parts.join('/') === 'account') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>人员管理 — Golden Project</title>
+<style>
+:root {
+  --bg: #f4efe5;
+  --ink: #1f241f;
+  --muted: #6b6a63;
+  --muted-light: rgba(31,36,31,0.35);
+  --line: rgba(31,36,31,0.07);
+  --accent: #bf5a36;
+  --accent-soft: rgba(191,90,54,0.1);
+  --accent-strong: #8e3419;
+  --green: #335c4f;
+  --green-soft: rgba(51,92,79,0.08);
+  --gold: #af8d33;
+  --danger: #a63f2f;
+  --danger-soft: rgba(166,63,47,0.08);
+  --panel-bg: rgba(255,251,244,0.92);
+  --card-bg: #fff;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 3px rgba(34,28,16,0.04);
+  --shadow-md: 0 4px 12px rgba(34,28,16,0.06);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 8%, rgba(191,90,54,0.1), transparent 30%),
+              radial-gradient(circle at 85% 12%, rgba(175,141,51,0.1), transparent 26%),
+              linear-gradient(165deg, #f7f0e2 0%, #f2ecdf 50%, #ede6d5 100%);
+  color: var(--ink);
+  font-family: "Inter","Hiragino Sans GB","PingFang SC","Microsoft YaHei",sans-serif;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.3), transparent 85%);
+}
+.app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+/* Sidebar */
+.sidebar {
+  width: 240px; flex-shrink: 0;
+  padding: 24px 16px;
+  border-right: 1px solid var(--line);
+  background: rgba(255,251,244,0.6);
+  backdrop-filter: blur(12px);
+  display: flex; flex-direction: column;
+}
+.sidebar-logo { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 28px; padding: 0 8px; }
+.sidebar-logo span { color: var(--accent); }
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  text-decoration: none; transition: all 0.12s;
+}
+.sidebar-nav a:hover { background: var(--accent-soft); color: var(--ink); }
+.sidebar-nav a.active {
+  background: var(--accent-soft); color: var(--accent-strong); font-weight: 600;
+}
+.sidebar-nav .icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-user { margin-top: auto; padding: 12px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+.sidebar-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name { font-size: 13px; font-weight: 600; }
+.sidebar-user-role { font-size: 11px; color: var(--muted); }
+
+/* Main */
+.main { flex: 1; padding: 28px 32px; min-width: 0; }
+
+/* Top bar */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 28px;
+}
+.topbar h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+
+/* Stats row */
+.stats-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--panel-bg); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.stat-card .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+.stat-card .stat-sub { font-size: 11px; color: var(--muted-light); margin-top: 2px; }
+
+/* Section */
+.section {
+  background: var(--panel-bg); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); margin-bottom: 16px;
+  box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px; border-bottom: 1px solid var(--line);
+}
+.section-header h2 { font-size: 15px; font-weight: 700; }
+.section-header .hint { font-size: 12px; color: var(--muted); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 12px 16px; font-weight: 600; color: var(--muted);
+  font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+  background: rgba(31,36,31,0.02);
+  white-space: nowrap;
+}
+td { padding: 14px 16px; border-bottom: 1px solid rgba(31,36,31,0.04); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(191,90,54,0.03); }
+td strong { font-weight: 600; }
+td .muted { color: var(--muted); font-size: 12px; }
+td .small { font-size: 11px; color: var(--muted-light); }
+.role-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 5px;
+  font-size: 11px; font-weight: 600;
+}
+.role-badge.admin { background: var(--accent-soft); color: var(--accent-strong); }
+.role-badge.member { background: rgba(31,36,31,0.05); color: var(--muted); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 8px 16px; border: none; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.12s; text-decoration: none; white-space: nowrap;
+  line-height: 1.2;
+}
+.btn-sm { padding: 5px 10px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-soft { background: var(--accent-soft); color: var(--accent-strong); }
+.btn-soft:hover { background: rgba(191,90,54,0.18); }
+.btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: var(--danger-soft); border: 1px solid rgba(166,63,47,0.25); color: var(--danger); }
+.btn-danger:hover { background: rgba(166,63,47,0.12); }
+
+/* Form inline */
+.form-row {
+  display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+.form-group input, .form-group select {
+  padding: 8px 12px; background: #fff; border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm); color: var(--ink); font-size: 13px;
+  outline: none; transition: border-color 0.15s; min-width: 120px;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+.form-group input::placeholder { color: rgba(31,36,31,0.2); }
+
+/* Inline form area */
+.inline-form {
+  padding: 16px 24px; border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,0.3);
+}
+
+/* Messages */
+.msg {
+  font-size: 12px; padding: 8px 14px; border-radius: var(--radius-sm);
+  display: none; line-height: 1.5;
+}
+.msg-ok { background: var(--green-soft); color: var(--green); display: flex; align-items: center; gap: 6px; }
+.msg-err { background: var(--danger-soft); color: var(--danger); display: flex; align-items: center; gap: 6px; }
+
+/* Profile section (bottom) */
+.profile-form { padding: 20px 24px; }
+.color-strip { display: flex; gap: 6px; margin-top: 8px; }
+.color-swatch {
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: all 0.1s;
+}
+.color-swatch:hover { transform: scale(1.15); }
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .main { padding: 20px 16px; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .form-row { flex-direction: column; }
+  .inline-form { padding: 14px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><span>GP</span> 管理后台</div>
+    <nav class="sidebar-nav">
+      <a href="#" class="active"><span class="icon">👥</span>人员管理</a>
+      <a href="/console/dashboard"><span class="icon">📊</span>仪表盘</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="sidebar-avatar" id="sideAvatar" style="background:var(--accent);">?</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sideName">—</div>
+        <div class="sidebar-user-role" id="sideRole">管理员</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>人员管理</h1>
+        <p style="font-size:13px;color:var(--muted);margin-top:2px;">管理系统账号与成员信息</p>
+      </div>
+      <div class="topbar-right">
+        <span style="font-size:12px;color:var(--muted);" id="loginInfo"></span>
+        <a class="btn btn-ghost btn-sm" href="javascript:logout()">退出</a>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">总成员</div>
+        <div class="stat-value" id="statTotal">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">管理员</div>
+        <div class="stat-value" id="statAdmin">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">普通成员</div>
+        <div class="stat-value" id="statMember">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">我的项目</div>
+        <div class="stat-value" id="statProjects">0</div>
+        <div class="stat-sub" id="statProjectsDetail"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>添加成员</h2>
+        <span class="hint">创建系统账号，可用于项目成员分配</span>
+      </div>
+      <div class="inline-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>姓名</label>
+            <input id="cName" placeholder="输入姓名" />
+          </div>
+          <div class="form-group">
+            <label>手机号</label>
+            <input id="cMobile" placeholder="手机号（登录账号）" />
+          </div>
+          <div class="form-group">
+            <label>角色</label>
+            <select id="cRole">
+              <option value="member">普通成员</option>
+              <option value="admin">管理员</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input id="cPwd" placeholder="默认 123456" />
+          </div>
+          <button class="btn btn-primary" onclick="createUser()">添加</button>
+        </div>
+        <div id="createMsg" class="msg" style="margin-top:10px;"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"></th>
+              <th>姓名</th>
+              <th>手机号</th>
+              <th>微信</th>
+              <th>角色</th>
+              <th>参与项目</th>
+              <th style="width:180px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="userList"><tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted);">加载中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h2>我的账号</h2>
+        <a class="btn btn-soft btn-sm" href="/console/dashboard">← 返回仪表盘</a>
+      </div>
+      <div class="profile-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>姓名</label>
+            <input id="editName" style="min-width:140px;" />
+          </div>
+          <button class="btn btn-soft btn-sm" onclick="changeName()">更新姓名</button>
+          <div class="form-group">
+            <label>微信号</label>
+            <input id="editWechat" placeholder="微信号" style="min-width:140px;" />
+          </div>
+          <button class="btn btn-soft btn-sm" onclick="changeContact()">保存微信</button>
+        </div>
+        <div class="form-row" style="margin-top:12px;">
+          <span style="font-size:11px;font-weight:600;color:var(--muted);">头像颜色</span>
+          <div class="color-strip" id="inlineColorPicker"></div>
+        </div>
+        <div id="nameMsg" class="msg" style="margin-top:10px;"></div>
+        <div id="contactMsg" class="msg" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+var token = localStorage.getItem('gp_token');
+var user = JSON.parse(localStorage.getItem('gp_user') || '{}');
+if (!token) window.location.href = '/agent/login';
+if (user.role !== 'admin') window.location.href = '/console/dashboard';
+
+var AVATAR_COLORS = ['#bf5a36','#335c4f','#af8d33','#4a7b9d','#8b5e8a','#c0564a','#4b8b6a','#b87a3a','#5a6b9a','#a0556b'];
+
+function renderSidebar() {
+  var letter = (user.name || '?')[0];
+  document.getElementById('sideName').textContent = user.name || '—';
+  document.getElementById('sideRole').textContent = user.role === 'admin' ? '管理员' : '成员';
+  var a = document.getElementById('sideAvatar');
+  a.textContent = letter;
+  a.style.background = user.avatarColor || AVATAR_COLORS[0];
+}
+renderSidebar();
+
+function initColorPicker() {
+  var c = document.getElementById('inlineColorPicker');
+  if (!c) return;
+  var cur = user.avatarColor || AVATAR_COLORS[0];
+  c.innerHTML = AVATAR_COLORS.map(function(v) {
+    var active = v === cur ? ' style="border-color:var(--ink);"' : '';
+    return '<div class="color-swatch" data-color="' + v + '" style="background:' + v + ';"' + active + '></div>';
+  }).join('');
+  // Use event delegation instead of inline onclick
+  c.addEventListener('click', function(e) {
+    var swatch = e.target.closest('.color-swatch');
+    if (!swatch) return;
+    selectColor(swatch.dataset.color);
+  });
+}
+function selectColor(color) {
+  user.avatarColor = color;
+  localStorage.setItem('gp_user', JSON.stringify(user));
+  document.getElementById('sideAvatar').style.background = color;
+  var sw = document.querySelectorAll('#inlineColorPicker .color-swatch');
+  for (var i = 0; i < sw.length; i++) sw[i].style.borderColor = sw[i].dataset.color === color ? 'var(--ink)' : 'transparent';
+}
+initColorPicker();
+
+document.getElementById('editName').value = user.name || '';
+document.getElementById('loginInfo').textContent = user.name + ' · ' + user.mobile;
+
+function msg(id, t, type) { var m = document.getElementById(id); if (!m) return; m.textContent = t; m.className = 'msg msg-' + type; setTimeout(function(){ m.style.display = 'none'; }, 3500); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function changeName() {
+  var n = document.getElementById('editName').value.trim();
+  if (!n) return msg('nameMsg', '姓名不能为空', 'err');
+  var btn = event.target; btn.disabled = true; btn.textContent = '保存中...';
+  fetch('/agent/auth/change-name', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({name:n})})
+  .then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('nameMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '更新姓名'; return; }
+    user.name = n; localStorage.setItem('gp_user', JSON.stringify(user));
+    document.getElementById('sideName').textContent = n;
+    document.getElementById('sideAvatar').textContent = (n || '?')[0];
+    document.getElementById('loginInfo').textContent = n + ' · ' + user.mobile;
+    msg('nameMsg', '姓名已更新', 'ok'); btn.disabled = false; btn.textContent = '更新姓名';
+  });
+}
+
+function changeContact() {
+  var w = document.getElementById('editWechat').value.trim();
+  var btn = event.target; btn.disabled = true; btn.textContent = '保存中...';
+  fetch('/agent/auth/change-contact', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({wechat:w})})
+  .then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('contactMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '保存微信'; return; }
+    user.wechat = w; localStorage.setItem('gp_user', JSON.stringify(user));
+    msg('contactMsg', '微信号已更新', 'ok'); btn.disabled = false; btn.textContent = '保存微信';
+  });
+}
+
+function renderStats(users, projects) {
+  document.getElementById('statTotal').textContent = users.length;
+  document.getElementById('statAdmin').textContent = users.filter(function(u){return u.role==='admin';}).length;
+  document.getElementById('statMember').textContent = users.filter(function(u){return u.role!=='admin';}).length;
+  document.getElementById('statProjects').textContent = (projects||[]).length;
+  if (projects&&projects.length) document.getElementById('statProjectsDetail').textContent = projects.map(function(p){return p.name;}).join('、');
+}
+
+function loadUsers() {
+  Promise.all([
+    fetch('/agent/auth/users', {headers:{'Authorization':'Bearer '+token}}).then(function(r){return r.json();}),
+    fetch('/agent/auth/my-projects', {headers:{'Authorization':'Bearer '+token}}).then(function(r){return r.json();}).catch(function(){return [];})
+  ]).then(function(results) {
+    var users = results[0] || [];
+    var projects = results[1] || [];
+    renderStats(users, projects);
+    var html = '';
+    if (!users.length) {
+      html = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted);">暂无成员，请在上方添加</td></tr>';
+    } else {
+      users.forEach(function(u, idx) {
+        var isAdmin = u.role === 'admin';
+        var isSelf = u.mobile === user.mobile;
+        var letter = (u.name || '?')[0];
+        var c = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+        var rh = isAdmin ? '<span class="role-badge admin">管理员</span>' : '<span class="role-badge member">成员</span>';
+        var actions = '';
+        if (isSelf) {
+          actions = '<span style="color:var(--muted-light);font-size:12px;">本人</span>';
+        } else {
+          actions = '<button class="btn btn-soft btn-sm" data-gp-action="resetPwd" data-gp-mobile="'+u.mobile+'">重置密码</button>'
+            + ' <button class="btn btn-danger btn-sm" data-gp-action="deleteUser" data-gp-mobile="'+u.mobile+'">删除</button>';
+        }
+        html += '<tr><td><div class="sidebar-avatar" style="background:'+c+';width:28px;height:28px;font-size:11px;">'+letter+'</div></td>'
+          + '<td><strong>'+esc(u.name)+'</strong></td><td>'+esc(u.mobile)+'</td><td class="muted">'+esc(u.wechat||'—')+'</td><td>'+rh+'</td><td class="small">—</td><td>'+actions+'</td></tr>';
+      });
+    }
+    document.getElementById('userList').innerHTML = html;
+  });
+}
+
+// Event delegation for user action buttons (bound once)
+(function() {
+  var list = document.getElementById('userList');
+  if (list && !list._gpDelegate) {
+    list._gpDelegate = true;
+    list.addEventListener('click', function(ev) {
+      var btn = ev.target.closest('[data-gp-action]');
+      if (!btn) return;
+      var action = btn.getAttribute('data-gp-action');
+      var mobile = btn.getAttribute('data-gp-mobile');
+      if (action === 'resetPwd') resetPwd(mobile);
+      if (action === 'deleteUser') deleteUser(mobile);
+    });
+  }
+})();
+
+function createUser() {
+  var name = document.getElementById('cName').value.trim();
+  var mobile = document.getElementById('cMobile').value.trim();
+  if (!name || !mobile) { msg('createMsg', '请填写姓名和手机号', 'err'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = '添加中...';
+  fetch('/agent/auth/users/create', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({
+    name:name, mobile:mobile, role:document.getElementById('cRole').value, password:document.getElementById('cPwd').value||'123456'
+  })}).then(function(r){return r.json()}).then(function(d) {
+    if (d.error) { msg('createMsg', d.error, 'err'); btn.disabled = false; btn.textContent = '添加'; return; }
+    msg('createMsg', '成员「'+d.name+'」已创建', 'ok');
+    document.getElementById('cName').value = ''; document.getElementById('cMobile').value = ''; document.getElementById('cPwd').value = '';
+    loadUsers(); btn.disabled = false; btn.textContent = '添加';
+  });
+}
+function deleteUser(mobile) { if(!confirm('确认删除 '+mobile+'？')) return;
+  fetch('/agent/auth/users/delete', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile:mobile})})
+  .then(function(r){return r.json()}).then(function(d){msg('createMsg', d.error||'已删除', d.error?'err':'ok'); loadUsers();});
+}
+function resetPwd(mobile) { var p = prompt('新密码（留空=123456）：');
+  fetch('/agent/auth/users/reset-password', {method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}, body:JSON.stringify({mobile:mobile, newPassword:p||'123456'})})
+  .then(function(r){return r.json()}).then(function(d){msg('createMsg', d.error||'密码已重置', d.error?'err':'ok');});
+}
+function logout() { localStorage.clear(); window.location.href = '/agent/login'; }
+loadUsers();
+</script>
+</body>
+</html>`);
+    }
+    // GET /admin - Redirect to account page (now integrated)
+    if (req.method === 'GET' && parts.join('/') === 'admin') {
+      res.writeHead(302, { 'Location': '/agent/account' });
+      return res.end();
+    }
+
+    // === API ENDPOINTS ===
+
+    // === USER MANAGEMENT (admin only) ===
+
+    // GET /auth/users - List all users (admin)
+    if (req.method === 'GET' && parts.join('/') === 'auth/users') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (user.role !== 'admin') {
+        res.writeHead(403);
+        return res.end(JSON.stringify({ error: '仅管理员可查看用户列表' }));
+      }
+      return res.end(JSON.stringify(USERS.map(u => ({ id: u.id, name: u.name, mobile: u.mobile, wechat: u.wechat || '', role: u.role }))));
+    }
+
+    // POST /auth/users/create - Create user (admin)
+    if (req.method === 'POST' && parts.join('/') === 'auth/users/create') {
+      const admin = requireUser(req, res);
+      if (!admin) return;
+      if (admin.role !== 'admin') {
+        res.writeHead(403);
+        return res.end(JSON.stringify({ error: '仅管理员可创建用户' }));
+      }
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { name, mobile, password, role, wechat } = JSON.parse(body);
+        if (USERS.find(u => u.mobile === mobile)) {
+          res.writeHead(409);
+          return res.end(JSON.stringify({ error: '该手机号已存在' }));
+        }
+        const id = 'user_' + Date.now();
+        const newUser = { id, name: name || mobile, mobile, wechat: wechat || '', password: password || '123456', role: role || 'member' };
+        USERS.push(newUser);
+        res.end(JSON.stringify({ id, name: newUser.name, mobile, wechat: newUser.wechat, role: newUser.role }));
+      });
+      return;
+    }
+
+    // POST /auth/users/delete - Delete user (admin only)
+    if (req.method === 'POST' && parts.join('/') === 'auth/users/delete') {
+      const adminUser = requireUser(req, res);
+      if (!adminUser) return;
+      if (adminUser.role !== 'admin') {
+        res.writeHead(403);
+        return res.end(JSON.stringify({ error: '仅管理员可删除用户' }));
+      }
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { mobile } = JSON.parse(body);
+        if (mobile === adminUser.mobile) return res.end(JSON.stringify({ error: '不能删除自己' }));
+        const idx = USERS.findIndex(u => u.mobile === mobile);
+        if (idx === -1) return res.end(JSON.stringify({ error: '用户不存在' }));
+        USERS.splice(idx, 1);
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+
+    // POST /auth/change-password - Change own password
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-password') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { oldPassword, newPassword } = JSON.parse(body);
+        if (user.password !== oldPassword) {
+          res.writeHead(403);
+          return res.end(JSON.stringify({ error: '原密码错误' }));
+        }
+        user.password = newPassword;
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+
+
+    // POST /auth/change-mobile - Change own mobile number
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-mobile') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { newMobile } = JSON.parse(body);
+        if (USERS.find(u => u.mobile === newMobile)) {
+          res.writeHead(409);
+          return res.end(JSON.stringify({ error: '该手机号已被使用' }));
+        }
+        user.mobile = newMobile;
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+
+    // POST /auth/change-name - Change own display name
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-name') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { name } = JSON.parse(body);
+        if (!name || !name.trim()) {
+          return res.end(JSON.stringify({ error: '姓名不能为空' }));
+        }
+        user.name = name.trim();
+        res.end(JSON.stringify({ ok: true, name: user.name }));
+      });
+      return;
+    }
+
+    // POST /auth/change-contact - Update contact info (wechat, mobile)
+    if (req.method === 'POST' && parts.join('/') === 'auth/change-contact') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { wechat } = JSON.parse(body);
+        user.wechat = wechat || '';
+        res.end(JSON.stringify({ ok: true, wechat: user.wechat }));
+      });
+      return;
+    }
+
+    // GET /auth/my-projects - List projects the current user is a member of
+    if (req.method === 'GET' && parts.join('/') === 'auth/my-projects') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      (async () => {
+        try {
+          const projects = await gpApi('GET', '/api/projects');
+          const myProjects = [];
+          if (Array.isArray(projects)) {
+            for (const p of projects) {
+              const detail = await gpApi('GET', '/api/projects/' + p.id).catch(() => ({}));
+              const members = detail.members || [];
+              const myMember = members.find(m => m.user?.mobile === user.mobile);
+              if (myMember) {
+                myProjects.push({
+                  id: p.id,
+                  code: p.code,
+                  name: p.name,
+                  memberId: myMember.id,
+                  role: myMember.role,
+                  title: myMember.title,
+                  memberName: myMember.user?.name || '',
+                });
+              }
+            }
+          }
+          res.end(JSON.stringify(myProjects));
+        } catch(e) {
+          res.end(JSON.stringify([]));
+        }
+      })();
+      return;
+    }
+
+    // POST /auth/users/reset-password - Admin reset member password
+    if (req.method === 'POST' && parts.join('/') === 'auth/users/reset-password') {
+      const admin = requireUser(req, res);
+      if (!admin) return;
+      if (admin.role !== 'admin') {
+        res.writeHead(403);
+        return res.end(JSON.stringify({ error: '仅管理员可重置密码' }));
+      }
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { mobile, newPassword } = JSON.parse(body);
+        const target = USERS.find(u => u.mobile === mobile);
+        if (!target) return res.end(JSON.stringify({ error: '用户不存在' }));
+        target.password = newPassword || '123456';
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+
+    // POST /chat/:projectId
+    if (req.method === 'POST' && parts[0] === 'chat' && parts[1]) {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        const { message } = JSON.parse(body);
+        const [project, tasks, members] = await Promise.all([
+          gpApi('GET', '/api/projects/' + parts[1]).catch(() => ({})),
+          gpApi('GET', '/api/projects/' + parts[1] + '/tasks').catch(() => []),
+          gpApi('GET', '/api/projects/' + parts[1] + '/members').catch(() => []),
+        ]);
+        const ctx = '项目：' + (project.name || '未知') + '\n'
+          + '状态：' + (project.status || '未知') + '\n'
+          + '地点：' + (project.location || '未设置') + '\n'
+          + '成员：' + (Array.isArray(members) ? members.map(m => m.user?.name || m.name || '').join('、') : '');
+        const reply = await callDeepSeek([
+          { role: 'system', content: SYSTEM_PROMPT + '\n\n当前项目上下文：\n' + ctx },
+          { role: 'user', content: message },
+        ]);
+        res.end(JSON.stringify({ reply }));
+      });
+      return;
+    }
+
+    // POST /api/projects - Create project (auth required)
+    if (req.method === 'POST' && parts.join('/') === 'api/projects') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (user.role !== 'admin') {
+        res.writeHead(403);
+        return res.end(JSON.stringify({ error: '仅管理员可创建项目' }));
+      }
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        const dto = JSON.parse(body);
+        const result = await gpApi('POST', '/api/projects', { ...dto, createdById: user.id });
+        res.end(JSON.stringify(result));
+      });
+      return;
+    }
+
+    // GET /api/projects
+    if (req.method === 'GET' && parts.join('/') === 'api/projects') {
+      const data = await gpApi('GET', '/api/projects');
+      res.end(JSON.stringify(data));
+      return;
+    }
+
+    // GET /projects
+    if (req.method === 'GET' && parts[0] === 'projects' && parts.length === 1) {
+      const data = await gpApi('GET', '/api/projects');
+      res.end(JSON.stringify(data));
+      return;
+    }
+
+    // GET /project/:id
+    if (req.method === 'GET' && parts[0] === 'project' && parts[1]) {
+      const data = await gpApi('GET', '/api/projects/' + parts[1]);
+      res.end(JSON.stringify(data));
+      return;
+    }
+
+    // GET /my-tasks?projectCode=xxx&memberId=xxx - Get current user's tasks
+    if (req.method === 'GET' && parts[0] === 'my-tasks') {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const projectCode = url.searchParams.get('projectCode');
+      let memberId = url.searchParams.get('memberId');
+      if (!projectCode) { res.end(JSON.stringify({ tasks: [] })); return; }
+      try {
+        // If memberId not provided, try to match by mobile
+        if (!memberId) {
+          const members = await gpApi('GET', '/api/projects/' + encodeURIComponent(projectCode) + '/members');
+          const member = Array.isArray(members) ? members.find(m => m.user?.mobile === user.mobile) : null;
+          if (!member) { res.end(JSON.stringify({ tasks: [] })); return; }
+          memberId = member.id;
+        }
+        const tasks = await gpApi('GET', '/api/mini/me/tasks?memberId=' + encodeURIComponent(memberId));
+        res.end(JSON.stringify({ tasks: Array.isArray(tasks) ? tasks : [] }));
+      } catch(e) {
+        res.end(JSON.stringify({ tasks: [], error: e.message }));
+      }
+      return;
+    }
+
+    // === INTAKE (信息录入) ===
+
+    // GET /intake/:projectId - Intake page (served from static file)
+        if (req.method === "GET" && parts[0] === "intake" && parts[1] && parts.length === 2) {
+          const pid = parts[1];
+          const fs = require("fs");
+          const project = await gpApi("GET", "/api/projects/" + pid).catch(() => ({}));
+          let html = fs.readFileSync("/opt/golden-project/public/intake.html", "utf8");
+          html = html.replace("{{PROJECT_NAME}}", project.name || "未命名项目");
+          html = html.replace("{{PROJECT_ID}}", pid);
+          html = html.replace("{{API_BASE}}", "/agent");
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          return res.end(html);
+        }
+
+    if (req.method === 'POST' && parts[0] === 'intake' && parts[1] && parts[2] === 'analyze') {
+      const pid = parts[1];
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        try {
+          const { files } = JSON.parse(body);
+          const project = await gpApi('GET', '/api/projects/' + pid).catch(() => ({}));
+          const projectName = project.name || '未命名项目';
+
+          // Parse uploaded files to extract text content
+          const parseScript = '/opt/golden-project/parse_file.py';
+          const fs = require('fs');
+          let fileTexts = [];
+          for (const f of files) {
+            try {
+              // Write base64 to temp then call parser
+              const result = execSync('python3 ' + parseScript + ' ' + JSON.stringify(f.name), {
+                input: f.content,
+                timeout: 30000,
+                maxBuffer: 10 * 1024 * 1024,
+              }).toString().trim();
+              fileTexts.push('文件: ' + f.name + '\n内容:\n' + result.slice(0, 8000));
+            } catch(e) {
+              fileTexts.push('文件: ' + f.name + '\n内容: [解析失败: ' + e.message.slice(0, 100) + ']');
+            }
+          }
+          
+          var prompt = "请严格按照analysis_rules.md的完整JSON Schema提取所有字段，包括organizer、executor、activities、contacts、vendors、venues、risks、analysis。已知项目名称: " + projectName + "\\n\\n上传文档内容:\\n" + fileTexts.join("\\n") + "\\n\\n请输出完整JSON。";
+
+          const reply = await new Promise(function(resolve, reject) { try { var https = require("https"); var rules = require("fs").readFileSync("/opt/golden-project/analysis_rules.md","utf8"); var data = JSON.stringify({model:"deepseek-chat",messages:[{role:"system",content:rules},{role:"user",content:prompt}],temperature:0.1,max_tokens:12000,response_format:{type:"json_object"}}); var r = https.request("https://api.deepseek.com/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+process.env.GP_AGENT_KEY},timeout:50000},function(resp){ var d = ""; resp.on("data",function(c){d+=c}); resp.on("end",function(){ try { resolve(JSON.parse(d).choices[0].message.content); } catch(e) { resolve(""); } }); }); r.on("error",function(e){resolve("")}); r.write(data); r.end(); } catch(e) { resolve(""); } });
+
+          let data;
+          try {
+            // Try to extract JSON from the reply
+            var jsonMatch = reply.match(/\{[\s\S]*\}/);
+            data = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(reply);
+          } catch(e) {
+            return res.end(JSON.stringify({ error: 'AI 分析结果格式错误，请重试', raw: reply.slice(0,200) }));
+          }
+
+                    // Save files to project folder
+          try {
+            var safename = (projectName || "project").replace(/[:*?"<>|]/g, "_");
+            var dpath = "/opt/golden-project/" + String.fromCharCode(39033, 30446, 21015, 34920) + "/" + safename + "/" + String.fromCharCode(21021, 22987, 25991, 26723);
+            if (!require("fs").existsSync(dpath)) require("fs").mkdirSync(dpath, { recursive: true });
+            for (var fi = 0; fi < files.length; fi++) {
+              var ff = files[fi];
+              var fname = ff.name.replace(/[:*?"<>|]/g, "_");
+              var fpath = dpath + "/" + fname;
+              if (!require("fs").existsSync(fpath)) require("fs").writeFileSync(fpath, Buffer.from(ff.content, "base64"));
+            }
+          } catch(e) {}
+
+          // Store analysis result
+          var storeKey = 'intake_' + pid;
+          var store = JSON.parse(process.env[storeKey] || '{}');
+          
+          // Merge with existing data if any
+          var existing = store || {};
+          Object.keys(data).forEach(function(k) { existing[k] = data[k]; });
+          
+          // Store in memory (will be lost on restart, but that's OK for now)
+          // TODO: persist to database
+          process.env[storeKey] = JSON.stringify(existing);
+
+          res.end(JSON.stringify({ ok: true, data: existing }));
+        } catch(e) {
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // POST /intake/:projectId/data - Save edited intake data
+    if (req.method === 'POST' && parts[0] === 'intake' && parts[1] && parts[2] === 'data') {
+      const pid = parts[1];
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          var storeKey = 'intake_' + pid;
+          process.env[storeKey] = JSON.stringify(data);
+          res.end(JSON.stringify({ ok: true }));
+        } catch(e) {
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // GET /intake/:projectId/data - Get saved intake data
+    if (req.method === 'GET' && parts[0] === 'intake' && parts[1] && parts[2] === 'data') {
+      var storeKey = 'intake_' + parts[1];
+      var data = JSON.parse(process.env[storeKey] || 'null');
+      res.end(JSON.stringify({ data }));
+      return;
+    }
+
+    
+
+    // POST /intake/:projectId/confirm
+    if (req.method === 'POST' && parts[0] === 'intake' && parts[1] && parts[2] === 'confirm') {
+      const p = parts[1]; let b = '';
+      req.on('data', c2 => b += c2);
+      req.on('end', async () => {
+        try {
+          const d = JSON.parse(b);
+          const ex = await gpApi('GET', '/api/projects/' + p).catch(() => ({}));
+          if (!ex || !ex.id) return res.end(JSON.stringify({ error: 'NotFound' }));
+          const pid = ex.id, pcode = ex.code || p;
+
+          // 1. Update project basic info (name, description)
+          await gpApi('PATCH', '/api/projects/' + pid, { name: d.projectName || ex.name, description: d.description || '' }).catch(() => {});
+
+          // 2. Sync full intake data to NestJS (creates modules, members, updates project fields)
+          await gpApi('POST', '/api/projects/' + pid + '/intake-sync', {
+            projectName: d.projectName,
+            description: d.description,
+            location: d.location,
+            startDate: d.startDate,
+            endDate: d.endDate,
+            modules: d.modules || [],
+            members: d.members || [],
+          }).catch(function(e) { console.log('intake-sync error:', e && e.message || e); });
+
+          // 3. Create tasks (archive old ones first, then create new)
+          if (d.tasks && d.tasks.length) {
+            const old = await gpApi('GET', '/api/projects/' + pid + '/tasks').catch(() => []);
+            if (old && Array.isArray(old)) for (const t of old) await gpApi('PATCH', '/api/projects/' + pid + '/tasks/' + t.id, { title: '[ARCHIVED] ' + (t.title||'') }).catch(() => {});
+            for (const t of d.tasks) await gpApi('POST', '/api/projects/' + pid + '/tasks', { title: t.title || 'Task', priority: ({'高':'HIGH','中':'MEDIUM','低':'LOW'})[t.priority] || 'MEDIUM', dueTime: t.deadline || null }).catch(() => {});
+          }
+
+          // 4. Create events for each task in the intake data (so dashboard shows them)
+          if (d.tasks && d.tasks.length) {
+            for (const t of d.tasks) {
+              await gpApi('POST', '/api/projects/' + pid + '/events', {
+                eventType: 'intake_task',
+                title: t.title || '未命名任务',
+                description: '由 AI 录入分析生成的任务',
+                sourceType: 'manual',
+                sourceChannel: 'intake_confirm',
+                confidence: 0.95,
+                proposedChanges: {
+                  task: {
+                    title: t.title,
+                    priority: ({'高':'HIGH','中':'MEDIUM','低':'LOW'})[t.priority] || 'MEDIUM',
+                    dueTime: t.deadline || null,
+                    ownerName: t.owner || '',
+                  }
+                }
+              }).catch(() => {});
+            }
+          }
+
+          process.env['intake_' + p] = JSON.stringify(d);
+          process.env['intake_project_' + pcode] = p;
+          process.env['intake_project_' + pid] = p;
+          try {
+            var sd = { nodes: [], edges: [], structureSource: "ai_generated" };
+            if (d.modules && d.modules.length) {
+              // Module nodes in top row
+              sd.nodes = d.modules.map(function(m, i) { return { id:"mod_"+i, type:"module", data:{ title: m.name||m.moduleName||"M"+(i+1), description: m.desc||"", leader: m.leader||"", progress:0, taskCount:0, createdBy:"ai" }, position:{ x:250+(i%3)*300, y:120+Math.floor(i/3)*200 }, parentId: i===0?null:"mod_0" }; });
+              sd.edges = sd.nodes.slice(1).map(function(n) { return { id:"e_"+n.id, source:"mod_0", target:n.id }; });
+            }
+            // Person nodes from members/contacts (second row)
+            var persons = d.members || d.contacts || [];
+            if (persons.length) {
+              persons.forEach(function(p, pi) {
+                var pid = "person_"+pi;
+                var personData = {
+                  name: p.name||p.userName||"成员"+(pi+1),
+                  role: p.role||p.title||"",
+                  avatar: p.avatar||""
+                };
+                sd.nodes.push({
+                  id: pid,
+                  type: "person",
+                  data: personData,
+                  position: { x: 150+(pi%3)*300, y: d.modules&&d.modules.length ? 350+Math.floor(pi/3)*120 : 200+Math.floor(pi/3)*120 },
+                  parentId: null
+                });
+                // Link person to module if their name matches a module's leader
+                if (d.modules&&d.modules.length) {
+                  var leaderName = personData.name;
+                  d.modules.forEach(function(mod, mi) {
+                    var modLeader = (mod.leader||"").trim();
+                    if (modLeader && (modLeader.indexOf(leaderName)!==-1 || leaderName.indexOf(modLeader)!==-1)) {
+                      sd.edges.push({
+                        id: "e_person_"+pid+"_mod_"+mi,
+                        source: pid,
+                        target: "mod_"+mi,
+                        type: "smoothstep",
+                        className: "person-module-edge"
+                      });
+                    }
+                  });
+                }
+              });
+            }
+            process.env["structure_" + pcode] = JSON.stringify(sd);
+          } catch(e) {}
+          res.end(JSON.stringify({ ok: true, projectId: pid, projectCode: pcode }));
+        } catch(e) { res.end(JSON.stringify({ error: e.message })); }
+      });
+      return;
+    }
+
+    // GET /intake/:code/analysis
+    if (req.method === 'GET' && parts[0] === 'intake' && parts[1] && parts[2] === 'analysis') {
+      const code = parts[1], pid = process.env['intake_project_' + code] || code, s = process.env['intake_' + pid];
+      if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
+      return res.end(JSON.stringify({ data: null }));
+    }
+
+    // GET /agent/structure/:code
+    if (req.method === 'GET' && parts[0] === 'structure' && parts[1]) {
+      const code = parts[1], s = process.env['structure_' + code];
+      if (s) { try { return res.end(JSON.stringify({ data: JSON.parse(s) })); } catch(e) {} }
+      return res.end(JSON.stringify({ data: null }));
+    }
+
+    // POST /agent/structure/:code
+    if (req.method === 'POST' && parts[0] === 'structure' && parts[1]) {
+      const code = parts[1]; let b2 = '';
+      req.on('data', c3 => b2 += c3);
+      req.on('end', () => { try { process.env['structure_' + code] = b2; res.end('{"ok":true}'); } catch(e) { res.end(JSON.stringify({error:e.message})); } });
+      return;
+    }
+
+
+// 404
+    res.writeHead(404);
+    res.end('Not Found');
+
+  } catch (e) {
+    res.writeHead(500);
+    res.end(JSON.stringify({ error: e.message }));
+  }
+});
+
+// Start
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('GP Agent running on port ' + PORT);
+});

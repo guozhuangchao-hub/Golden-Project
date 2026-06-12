@@ -2,12 +2,10 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   EventStatus,
   Prisma,
-  TaskLogAction,
   TaskPriority,
-  VisibilityScope,
 } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { EventsRepository } from './events.repository';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { ReviewEventDto, UpdateEventStatusDto } from './dto/review-event.dto';
 
@@ -24,14 +22,10 @@ type ProposedTask = {
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly eventsRepository: EventsRepository) {}
 
   private async resolveProject(identifier: string) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        OR: [{ id: identifier }, { code: identifier }],
-      },
-    });
+    const project = await this.eventsRepository.findProjectByIdentifier(identifier);
 
     if (!project) {
       throw new NotFoundException('Project not found');
@@ -41,15 +35,7 @@ export class EventsService {
   }
 
   private async ensureSystemUser() {
-    return this.prisma.user.upsert({
-      where: { email: 'system-event@golden.local' },
-      update: {},
-      create: {
-        name: 'Event 系统',
-        email: 'system-event@golden.local',
-        remark: '用于 Event-driven Demo 的系统确认账号',
-      },
-    });
+    return this.eventsRepository.upsertSystemUser();
   }
 
   private getProposedTask(proposedChanges: Prisma.JsonValue | null | undefined): ProposedTask | null {
@@ -88,10 +74,7 @@ export class EventsService {
   }
 
   private async createTaskFromEvent(eventId: string) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      include: { project: true },
-    });
+    const event = await this.eventsRepository.findEventWithProject(eventId);
 
     if (!event) {
       throw new NotFoundException('Event not found');
@@ -105,65 +88,34 @@ export class EventsService {
 
     const moduleName = proposedTask?.moduleName;
     const module = moduleName
-      ? await this.prisma.projectModule.findFirst({
-          where: { projectId: event.projectId, name: moduleName },
-        })
+      ? await this.eventsRepository.findProjectModuleByName(event.projectId, moduleName)
       : null;
 
     const ownerName = proposedTask?.ownerName;
     const ownerMember = ownerName
-      ? await this.prisma.projectMember.findFirst({
-          where: {
-            projectId: event.projectId,
-            user: { name: ownerName },
-          },
-          include: { user: true },
-        })
+      ? await this.eventsRepository.findProjectMemberByName(event.projectId, ownerName)
       : null;
 
     const assistantName = proposedTask?.assistantName;
     const assistantMember = assistantName
-      ? await this.prisma.projectMember.findFirst({
-          where: {
-            projectId: event.projectId,
-            user: { name: assistantName },
-          },
-          include: { user: true },
-        })
+      ? await this.eventsRepository.findProjectMemberByName(event.projectId, assistantName)
       : null;
 
     const systemUser = await this.ensureSystemUser();
 
-    return this.prisma.task.create({
-      data: {
-        projectId: event.projectId,
-        moduleId: module?.id,
-        title,
-        description: proposedTask?.description || event.description || event.rawContent,
-        priority: proposedTask?.priority || TaskPriority.MEDIUM,
-        ownerId: ownerMember?.userId,
-        ownerMemberId: ownerMember?.id,
-        assistantId: assistantMember?.userId,
-        assistantMemberId: assistantMember?.id,
-        startTime: proposedTask?.startTime ? new Date(proposedTask.startTime) : undefined,
-        dueTime: proposedTask?.dueTime ? new Date(proposedTask.dueTime) : undefined,
-        createdById: systemUser.id,
-        logs: {
-          create: {
-            action: TaskLogAction.CREATED,
-            content: `由 Event ${event.id} 经项目经理确认后生成`,
-          },
-        },
-      },
-      include: {
-        owner: true,
-        assistant: true,
-        module: true,
-        logs: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
+    return this.eventsRepository.createTaskFromEventData({
+      projectId: event.projectId,
+      moduleId: module?.id,
+      title,
+      description: proposedTask?.description || event.description || event.rawContent,
+      priority: proposedTask?.priority || TaskPriority.MEDIUM,
+      ownerId: ownerMember?.userId,
+      ownerMemberId: ownerMember?.id,
+      assistantId: assistantMember?.userId,
+      assistantMemberId: assistantMember?.id,
+      startTime: proposedTask?.startTime ? new Date(proposedTask.startTime) : undefined,
+      dueTime: proposedTask?.dueTime ? new Date(proposedTask.dueTime) : undefined,
+      createdById: systemUser.id,
     });
   }
 
@@ -171,49 +123,13 @@ export class EventsService {
     const project = await this.resolveProject(projectIdentifier);
     const confidence = dto.confidence == null ? null : new Prisma.Decimal(dto.confidence);
 
-    return this.prisma.event.create({
-      data: {
-        projectId: project.id,
-        eventType: dto.eventType,
-        title: dto.title,
-        description: dto.description,
-        status: EventStatus.pending_review,
-        confidence,
-        sourceType: dto.sourceType,
-        sourceChannel: dto.sourceChannel,
-        sourceSender: dto.sourceSender,
-        sourceSenderRole: dto.sourceSenderRole,
-        rawContent: dto.rawContent,
-        visibilityScope: dto.visibilityScope || VisibilityScope.admin,
-        aiResult: dto.aiResult as Prisma.InputJsonValue,
-        proposedChanges: dto.proposedChanges as Prisma.InputJsonValue,
-        createdById: dto.createdById,
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
-    });
+    return this.eventsRepository.createEvent(project.id, dto, confidence);
   }
 
   async findAll(projectIdentifier: string, query: ListEventsQueryDto) {
     const project = await this.resolveProject(projectIdentifier);
 
-    return this.prisma.event.findMany({
-      where: {
-        projectId: project.id,
-        status: query.status,
-        sourceType: query.sourceType,
-        visibilityScope: query.visibilityScope,
-        eventType: query.eventType,
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
-      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-      take: 50,
-    });
+    return this.eventsRepository.findEvents(project.id, query);
   }
 
   findPendingReview(projectIdentifier: string) {
@@ -221,14 +137,7 @@ export class EventsService {
   }
 
   async findOne(eventId: string) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      include: {
-        project: true,
-        createdBy: true,
-        confirmedBy: true,
-      },
-    });
+    const event = await this.eventsRepository.findEventDetail(eventId);
 
     if (!event) {
       throw new NotFoundException('Event not found');
@@ -241,22 +150,15 @@ export class EventsService {
     const event = await this.findOne(eventId);
     const systemUser = dto.confirmedById ? null : await this.ensureSystemUser();
 
-    const updatedEvent = await this.prisma.event.update({
-      where: { id: event.id },
-      data: {
-        title: dto.title,
-        description: dto.description,
-        eventType: dto.eventType,
-        visibilityScope: dto.visibilityScope,
-        proposedChanges: dto.proposedChanges as Prisma.InputJsonValue,
-        status: EventStatus.confirmed,
-        confirmedById: dto.confirmedById || systemUser?.id,
-        confirmedAt: new Date(),
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
+    const updatedEvent = await this.eventsRepository.updateEvent(event.id, {
+      title: dto.title,
+      description: dto.description,
+      eventType: dto.eventType,
+      visibilityScope: dto.visibilityScope,
+      proposedChanges: dto.proposedChanges as Prisma.InputJsonValue,
+      status: EventStatus.confirmed,
+      confirmedById: dto.confirmedById || systemUser?.id,
+      confirmedAt: new Date(),
     });
 
     const task = dto.createTask ? await this.createTaskFromEvent(event.id) : null;
@@ -276,68 +178,41 @@ export class EventsService {
       throw new BadRequestException('Reject reason is required');
     }
 
-    return this.prisma.event.update({
-      where: { id: event.id },
-      data: {
-        status: EventStatus.rejected,
-        description: event.description,
-        proposedChanges: this.mergeReviewMeta(event.proposedChanges, {
-          action: 'rejected',
-          reason,
-          reviewedAt: new Date().toISOString(),
-        }) as Prisma.InputJsonValue,
-        confirmedById: dto.confirmedById || systemUser?.id,
-        confirmedAt: new Date(),
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
+    return this.eventsRepository.updateEvent(event.id, {
+      status: EventStatus.rejected,
+      description: event.description,
+      proposedChanges: this.mergeReviewMeta(event.proposedChanges, {
+        action: 'rejected',
+        reason,
+        reviewedAt: new Date().toISOString(),
+      }) as Prisma.InputJsonValue,
+      confirmedById: dto.confirmedById || systemUser?.id,
+      confirmedAt: new Date(),
     });
   }
 
   async needsMoreInfo(eventId: string, dto: ReviewEventDto) {
     const event = await this.findOne(eventId);
 
-    return this.prisma.event.update({
-      where: { id: event.id },
-      data: {
-        status: EventStatus.needs_more_info,
-        description: dto.description ?? event.description,
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
+    return this.eventsRepository.updateEvent(event.id, {
+      status: EventStatus.needs_more_info,
+      description: dto.description ?? event.description,
     });
   }
 
   async updateStatus(eventId: string, dto: UpdateEventStatusDto) {
     const event = await this.findOne(eventId);
 
-    return this.prisma.event.update({
-      where: { id: event.id },
-      data: {
-        status: dto.status,
-      },
-      include: {
-        createdBy: true,
-        confirmedBy: true,
-      },
+    return this.eventsRepository.updateEvent(event.id, {
+      status: dto.status,
     });
   }
 
   async seedDemoEvents(projectIdentifier: string) {
     const project = await this.resolveProject(projectIdentifier);
 
-    const modules = await this.prisma.projectModule.findMany({
-      where: { projectId: project.id },
-      orderBy: { sortOrder: 'asc' },
-    });
-    const members = await this.prisma.projectMember.findMany({
-      where: { projectId: project.id },
-      include: { user: true },
-    });
+    const modules = await this.eventsRepository.findProjectModules(project.id);
+    const members = await this.eventsRepository.findProjectMembers(project.id);
 
     const stageModule = modules[0]?.name || '项目执行';
     const owner = members.find((member) => member.role === 'LEADER')?.user.name || '待指定负责人';
@@ -345,12 +220,7 @@ export class EventsService {
     const now = new Date();
     const dueSoon = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
-    await this.prisma.event.deleteMany({
-      where: {
-        projectId: project.id,
-        sourceChannel: 'demo_event_seed',
-      },
-    });
+    await this.eventsRepository.deleteDemoSeedEvents(project.id);
 
     const events = await Promise.all([
       this.create(project.id, {

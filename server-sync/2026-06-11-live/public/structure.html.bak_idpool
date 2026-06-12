@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Project 项目结构</title>
+    <script>
+      (function () {
+        const assetBase = location.protocol === 'file:' ? './' : '/console/assets/';
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = `${assetBase}dashboard.css`;
+        document.head.appendChild(style);
+        window.__STRUCTURE_ASSET_BASE__ = assetBase;
+      })();
+    </script>
+    <style>
+      /* ============================================================
+         GP Structure Tree — 层级结构树
+         ============================================================ */
+
+      .structure-shell {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100vh - 24px - 48px);
+      }
+
+      /* ===== 面板容器 ===== */
+      .structure-body-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        margin-top: 16px;
+        border-radius: 28px;
+        background: var(--paper);
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .structure-body-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(31, 36, 31, 0.06);
+        flex-shrink: 0;
+      }
+      .structure-body-header h3 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.03em;
+      }
+      .structure-body-header p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .structure-editor-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      .save-all-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border: 0;
+        border-radius: 999px;
+        padding: 7px 15px;
+        background: linear-gradient(135deg, var(--accent) 0%, #d88b45 100%);
+        color: #fff7ef;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        box-shadow: 0 8px 18px rgba(191, 90, 54, 0.18);
+        transition: transform 160ms ease, box-shadow 160ms ease;
+        white-space: nowrap;
+      }
+      .save-all-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 22px rgba(191, 90, 54, 0.26);
+      }
+      .save-all-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .save-status {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      /* ===== 树列布局 ===== */
+      .tree-node-column {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        flex-shrink: 0;
+      }
+      .tree-node-column-inner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+
+      /* ===== 树编辑区（上半部分） ===== */
+      .tree-editor {
+        padding: 20px 24px;
+        border-bottom: 1px solid rgba(31, 36, 31, 0.06);
+        overflow-x: auto;
+        flex-shrink: 0;
+        min-height: 100px;
+      }
+
+      .tree-empty {
+        text-align: center;
+        padding: 30px 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      /* ===== 层级树布局 ===== */
+      .tree-root {
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+        flex-wrap: nowrap;
+        min-width: max-content;
+      }
+
+      .tree-node-wrapper {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        position: relative;
+      }
+
+      .tree-node {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 12px;
+        border: 1.5px solid rgba(31, 36, 31, 0.08);
+        background: rgba(255, 255, 255, 0.85);
+        cursor: pointer;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 600;
+        position: relative;
+      }
+      .tree-node:hover {
+        border-color: rgba(191, 90, 54, 0.2);
+        box-shadow: 0 4px 10px rgba(34, 28, 16, 0.06);
+      }
+      .tree-node.project-node {
+        background: linear-gradient(135deg, rgba(255, 251, 244, 0.98), rgba(248, 242, 231, 0.95));
+        border-color: rgba(191, 90, 54, 0.2);
+        font-weight: 800;
+        font-size: 15px;
+        padding: 10px 18px;
+        color: var(--accent-strong);
+      }
+      .tree-node.project-node:hover {
+        border-color: var(--accent);
+      }
+
+      .tree-node-name {
+        min-width: 20px;
+        outline: none;
+        border: none;
+        background: transparent;
+        font: inherit;
+        color: var(--ink);
+        padding: 0;
+        line-height: 1.4;
+      }
+      .tree-node-name:focus {
+        text-decoration: underline;
+        text-decoration-color: rgba(191, 90, 54, 0.3);
+        text-underline-offset: 3px;
+      }
+      .tree-node-name::placeholder {
+        color: var(--muted);
+        opacity: 0.5;
+        font-weight: 400;
+      }
+
+      .tree-node-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin-left: 2px;
+        flex-shrink: 0;
+      }
+
+      .tree-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease;
+        line-height: 1;
+        padding: 0;
+      }
+      .tree-btn:hover {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+      .tree-btn.delete-btn:hover {
+        background: rgba(166, 63, 47, 0.1);
+        color: var(--danger);
+      }
+
+      /* ===== 连接线 ===== */
+      .tree-connector {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 4px;
+        color: rgba(31, 36, 31, 0.15);
+        font-size: 16px;
+        font-weight: 300;
+        flex-shrink: 0;
+        user-select: none;
+      }
+
+      /* ===== 子节点组 ===== */
+      .tree-children {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-left: 4px;
+        position: relative;
+      }
+      .tree-children::before {
+        content: '';
+        position: absolute;
+        left: -8px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: rgba(31, 36, 31, 0.06);
+        border-radius: 999px;
+      }
+
+      /* ===== 卡片展示区（下半部分） ===== */
+      .cards-area {
+        flex: 1;
+        padding: 16px 24px 24px;
+        overflow-y: auto;
+        min-height: 200px;
+      }
+      .cards-area::-webkit-scrollbar {
+        width: 6px;
+      }
+      .cards-area::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(31, 36, 31, 0.12);
+      }
+      .cards-area::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .cards-empty {
+        text-align: center;
+        padding: 40px 16px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      /* ===== 卡片网格 ===== */
+      .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 12px;
+      }
+
+      .structure-card {
+        border-radius: 16px;
+        border: 1.5px solid rgba(31, 36, 31, 0.07);
+        background: rgba(255, 255, 255, 0.78);
+        padding: 14px 16px 14px 16px;
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+        position: relative;
+      }
+      .structure-card:hover {
+        border-color: rgba(191, 90, 54, 0.12);
+        box-shadow: 0 4px 12px rgba(34, 28, 16, 0.05);
+      }
+
+      .structure-card-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        padding-right: 28px;
+        border-bottom: 1px solid rgba(31, 36, 31, 0.05);
+      }
+      .structure-card-level {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--accent-strong);
+        background: var(--accent-soft);
+        padding: 2px 7px;
+        border-radius: 999px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .structure-card-title { max-width: calc(100% - 30px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ink);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .structure-card-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease;
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        line-height: 1;
+      }
+      .structure-card-close:hover {
+        background: rgba(166, 63, 47, 0.1);
+        color: var(--danger);
+      }
+
+      .structure-card-body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .structure-card-field {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .structure-card-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .structure-card-value {
+        font-size: 13px;
+        color: var(--ink);
+        font-weight: 500;
+        outline: none;
+        border: none;
+        background: rgba(31, 36, 31, 0.03);
+        border-radius: 6px;
+        padding: 4px 8px;
+        min-height: 24px;
+        transition: background 120ms ease;
+        line-height: 1.5;
+      }
+      .structure-card-value:focus {
+        background: rgba(191, 90, 54, 0.06);
+        outline: 1.5px solid rgba(191, 90, 54, 0.2);
+      }
+      .structure-card-value::placeholder {
+        color: var(--muted);
+        opacity: 0.4;
+        font-weight: 400;
+      }
+
+      /* ===== 加载/错误 ===== */
+      .tree-loading,
+      .tree-error {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        color: var(--muted);
+        font-size: 14px;
+        gap: 10px;
+      }
+      .tree-error {
+        color: var(--danger);
+      }
+      .tree-error button {
+        margin-top: 8px;
+        border: 1px solid rgba(166, 63, 47, 0.2);
+        border-radius: 999px;
+        padding: 8px 14px;
+        background: transparent;
+        color: var(--danger);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      /* ===== Hero 微调 ===== */
+      .structure-hero {
+        flex-shrink: 0;
+      }
+
+      /* ===== 拖拽排序样式 ===== */
+      .tree-node[draggable="true"] {
+        cursor: grab;
+        user-select: none;
+      }
+      .tree-node[draggable="true"]:active {
+        cursor: grabbing;
+      }
+      .tree-node.dragging {
+        opacity: 0.35;
+        outline: 2px dashed rgba(191, 90, 54, 0.3);
+        outline-offset: 2px;
+      }
+      .tree-node-column-inner.drag-over > .tree-node {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(191, 90, 54, 0.2);
+        background: rgba(191, 90, 54, 0.06);
+      }
+      .tree-node-column-inner.drag-over-children {
+        outline: 2.5px dashed rgba(191, 90, 54, 0.35);
+        outline-offset: 5px;
+        border-radius: 10px;
+        background: rgba(191, 90, 54, 0.03);
+      }
+
+      /* ===== 响应式 ===== */
+      @media (max-width: 720px) {
+        .cards-grid {
+          grid-template-columns: 1fr;
+        }
+        .tree-root {
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell structure-shell">
+      <!-- ===== 顶部：Hero 区域 ===== -->
+      <section class="structure-hero" id="heroSection">
+        <div>
+          <a class="back-link" id="backToDashboard" href="/console/dashboard">返回 dashboard</a>
+          <div class="eyebrow"><span>STRUCTURE MODE</span></div>
+          <h1 id="structureProjectName">项目结构</h1>
+          <p id="structureProjectMeta">编辑层级结构，修改后点击保存。</p>
+        </div>
+        <aside class="structure-switcher">
+          <label for="structureProjectSelect">项目切换</label>
+          <select id="structureProjectSelect">
+            <option value="">正在加载项目列表...</option>
+          </select>
+          <button class="button primary" id="loadStructureProject" type="button">加载结构</button>
+          <p class="subtle" id="structureStatus">正在准备结构页...</p>
+        </aside>
+      </section>
+
+      <!-- ===== 结构编辑器 ===== -->
+      <div class="structure-body-panel">
+        <!-- Header -->
+        <div class="structure-body-header">
+          <div>
+            <h3>结构内容编辑区</h3>
+            <p id="structureSummary">层级结构树 · 编辑后点击保存</p>
+          </div>
+          <div class="structure-editor-actions">
+            <button class="save-all-btn" id="saveStructureBtn" type="button">
+              💾 保存结构
+            </button>
+            <span class="save-status" id="saveStatus"></span>
+          </div>
+        </div>
+
+        <!-- 树编辑区 -->
+        <div class="tree-editor" id="treeEditor">
+          <div class="tree-empty">加载结构中...</div>
+        </div>
+
+        <!-- 卡片展示区 -->
+        <div class="cards-area" id="cardsArea">
+          <div class="cards-empty">选择并加载项目后显示结构卡片</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ===== 主应用 ===== -->
+    <script src="/console/assets/structure.js"></script>
+  </body>
+</html>

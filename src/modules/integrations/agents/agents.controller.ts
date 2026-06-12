@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { RequireProjectPermission } from '../../../platform/auth/permission.decorator';
 import { ChatAgentDto } from './dto/chat-agent.dto';
 import { ManagerWorkflowDto } from './dto/manager-workflow.dto';
 import { MemberWorkflowDto } from './dto/member-workflow.dto';
@@ -18,6 +19,10 @@ export class AgentsController {
   }
 
   @Patch('projects/:projectId/integrations')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   upsertIntegration(
     @Param('projectId') projectId: string,
     @Body() dto: UpsertAgentIntegrationDto,
@@ -39,6 +44,10 @@ export class AgentsController {
   }
 
   @Post('projects/:projectId/customer-service/chat')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   chat(
     @Param('projectId') projectId: string,
     @Body() dto: ChatAgentDto,
@@ -47,6 +56,10 @@ export class AgentsController {
   }
 
   @Post('projects/:projectId/workflows/manager-brief')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   managerBrief(
     @Param('projectId') projectId: string,
     @Body() dto: ManagerWorkflowDto,
@@ -55,6 +68,10 @@ export class AgentsController {
   }
 
   @Post('projects/:projectId/workflows/member-brief')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    projectParam: 'projectId',
+  })
   memberBrief(
     @Param('projectId') projectId: string,
     @Body() dto: MemberWorkflowDto,
@@ -63,6 +80,10 @@ export class AgentsController {
   }
 
   @Post('events/:eventId/ack')
+  @RequireProjectPermission({
+    action: 'AGENT_WORKFLOW_TRIGGER',
+    eventParam: 'eventId',
+  })
   acknowledgeEvent(
     @Param('eventId') eventId: string,
     @Body() body: { note?: string },

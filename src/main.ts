@@ -5,9 +5,12 @@ import { NestFactory } from '@nestjs/core';
 import * as express from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
+import { AppConfigService } from './platform/config/app-config.service';
+import { AppExceptionFilter } from './platform/http/app-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const appConfigService = app.get(AppConfigService);
 
   app.setGlobalPrefix('api', {
     exclude: [
@@ -26,8 +29,9 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalFilters(new AppExceptionFilter());
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(appConfigService.getPort());
 }
 
 bootstrap();

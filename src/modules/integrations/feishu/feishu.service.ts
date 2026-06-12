@@ -6,11 +6,55 @@ import {
   Prisma,
   Project,
 } from '@prisma/client';
+import { AppConfigService } from '../../../platform/config/app-config.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OpsSignalsService } from '../../ops-signals/ops-signals.service';
 import { UpsertFeishuSettingDto } from './dto/upsert-feishu-setting.dto';
 
-type FeishuEventPayload = Record<string, any>;
+type FeishuEventPayload = Record<string, unknown>;
+type FeishuEventHeader = {
+  token?: string;
+  event_type?: string;
+};
+
+type FeishuEventMessage = {
+  message_id?: string;
+  chat_id?: string;
+  content?: unknown;
+  message_type?: string;
+  msg_type?: string;
+};
+
+type FeishuEventSenderId = {
+  open_id?: string;
+  user_id?: string;
+  union_id?: string;
+  name?: string;
+  nickname?: string;
+  user_name?: string;
+};
+
+type FeishuEventSender = {
+  sender_id?: FeishuEventSenderId;
+};
+
+type FeishuEventAction = {
+  value?: unknown;
+};
+
+type FeishuEventBody = {
+  message?: FeishuEventMessage;
+  chat_id?: string;
+  sender?: FeishuEventSender;
+  action?: FeishuEventAction;
+  user?: {
+    open_id?: string;
+  };
+  user_id?: string;
+  operator?: {
+    open_id?: string;
+  };
+};
 
 type FeishuProposalTask = {
   title: string;
@@ -24,6 +68,10 @@ type FeishuProposalTask = {
   sourceMessageText: string;
 };
 
+type FeishuCardContentItem = {
+  text?: string;
+};
+
 @Injectable()
 export class FeishuService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FeishuService.name);
@@ -31,6 +79,7 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   private tenantTokenCache: { token: string; expiresAt: number } | null = null;
 
   constructor(
+    private readonly appConfigService: AppConfigService,
     private readonly prisma: PrismaService,
     private readonly opsSignalsService: OpsSignalsService,
   ) {}
@@ -111,7 +160,11 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
 
     this.assertVerificationToken(payload);
 
-    const eventType = payload?.header?.event_type;
+    const header =
+      payload.header && typeof payload.header === 'object'
+        ? (payload.header as FeishuEventHeader)
+        : undefined;
+    const eventType = header?.event_type;
     if (eventType === 'im.message.receive_v1') {
       await this.ingestMessageEvent(payload);
     }
@@ -126,7 +179,14 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
 
     this.assertVerificationToken(payload);
 
-    const eventType = payload?.header?.event_type || payload?.event_type || 'card.action.trigger';
+    const header =
+      payload.header && typeof payload.header === 'object'
+        ? (payload.header as FeishuEventHeader)
+        : undefined;
+    const eventType =
+      header?.event_type ||
+      (typeof payload.event_type === 'string' ? payload.event_type : undefined) ||
+      'card.action.trigger';
     if (eventType === 'card.action.trigger') {
       return this.handleCardAction(payload);
     }
@@ -224,20 +284,27 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertVerificationToken(payload: FeishuEventPayload) {
-    const expected = process.env.FEISHU_VERIFICATION_TOKEN?.trim();
+    const expected = this.appConfigService.getFeishuVerificationToken()?.trim();
     if (!expected) {
       return;
     }
 
-    const actual = payload?.header?.token;
+    const header =
+      payload.header && typeof payload.header === 'object'
+        ? (payload.header as FeishuEventHeader)
+        : undefined;
+    const actual = header?.token;
     if (actual && actual !== expected) {
       throw new Error('Invalid Feishu verification token');
     }
   }
 
   private async ingestMessageEvent(payload: FeishuEventPayload) {
-    const event = payload?.event ?? {};
-    const message = event?.message ?? event;
+    const event =
+      payload.event && typeof payload.event === 'object'
+        ? (payload.event as FeishuEventBody)
+        : {};
+    const message = (event.message ?? event) as FeishuEventMessage;
     const messageId = message?.message_id;
     const chatId = message?.chat_id || event?.chat_id;
     if (!messageId || !chatId) {
@@ -290,7 +357,11 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleCardAction(payload: FeishuEventPayload) {
-    const actionValue = this.parseActionValue(payload?.event?.action?.value);
+    const event =
+      payload.event && typeof payload.event === 'object'
+        ? (payload.event as FeishuEventBody)
+        : {};
+    const actionValue = this.parseActionValue(event?.action?.value);
     const proposalId = actionValue?.proposalId;
     const decision = actionValue?.decision;
 
@@ -450,7 +521,11 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    if (setting.manager?.feishuUserId && process.env.FEISHU_APP_ID && process.env.FEISHU_APP_SECRET) {
+    if (
+      setting.manager?.feishuUserId &&
+      this.appConfigService.getFeishuAppId() &&
+      this.appConfigService.getFeishuAppSecret()
+    ) {
       try {
         const messageId = await this.sendReviewCard(setting.manager.feishuUserId, proposal, setting);
         await this.prisma.feishuTaskProposal.update({
@@ -534,8 +609,8 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
       project: { name: string };
     },
   ) {
-    const taskItems = Array.isArray(proposal.proposedTasks) ? proposal.proposedTasks : [];
-    const preview = taskItems.slice(0, 5).map((task: any, index: number) => {
+    const taskItems = this.normalizeProposalTasks(proposal.proposedTasks);
+    const preview = taskItems.slice(0, 5).map((task, index) => {
       return `**${index + 1}. ${task.title || '未命名事项'}**\n- 负责人：${task.ownerName || '待确认'}\n- 模块：${task.moduleName || '未匹配'}\n- 截止：${task.dueTime || '未识别'}\n- 优先级：${task.priority || 'MEDIUM'}`;
     });
 
@@ -710,8 +785,8 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getTenantAccessToken() {
-    const appId = process.env.FEISHU_APP_ID?.trim();
-    const appSecret = process.env.FEISHU_APP_SECRET?.trim();
+    const appId = this.appConfigService.getFeishuAppId()?.trim();
+    const appSecret = this.appConfigService.getFeishuAppSecret()?.trim();
     if (!appId || !appSecret) {
       throw new Error('Missing FEISHU_APP_ID or FEISHU_APP_SECRET');
     }
@@ -774,7 +849,10 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
 
       if (Array.isArray(parsed?.content)) {
         return parsed.content
-          .map((item: any) => (typeof item?.text === 'string' ? item.text : ''))
+          .map((item) => {
+            const value = item as FeishuCardContentItem;
+            return typeof value?.text === 'string' ? value.text : '';
+          })
           .filter(Boolean)
           .join('\n');
       }
@@ -799,6 +877,35 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
     }
 
     return value as Record<string, unknown>;
+  }
+
+  private normalizeProposalTasks(value: Prisma.JsonValue | null): FeishuProposalTask[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+        const raw = item as Record<string, unknown>;
+        return {
+          title: typeof raw.title === 'string' ? raw.title : '',
+          description: typeof raw.description === 'string' ? raw.description : '',
+          moduleName: typeof raw.moduleName === 'string' ? raw.moduleName : null,
+          ownerName: typeof raw.ownerName === 'string' ? raw.ownerName : null,
+          assistantName:
+            typeof raw.assistantName === 'string' ? raw.assistantName : null,
+          priority: typeof raw.priority === 'string' ? raw.priority : 'MEDIUM',
+          dueTime: typeof raw.dueTime === 'string' ? raw.dueTime : null,
+          sourceMessageId:
+            typeof raw.sourceMessageId === 'string' ? raw.sourceMessageId : '',
+          sourceMessageText:
+            typeof raw.sourceMessageText === 'string' ? raw.sourceMessageText : '',
+        } satisfies FeishuProposalTask;
+      })
+      .filter((item): item is FeishuProposalTask => Boolean(item));
   }
 
   private startOfToday() {
@@ -838,10 +945,10 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
       throw new Error('Feishu project setting not found');
     }
 
-    const items = Array.isArray(proposal.proposedTasks) ? proposal.proposedTasks : [];
+    const items = this.normalizeProposalTasks(proposal.proposedTasks);
     const createdTaskIds: string[] = [];
 
-    for (const rawItem of items as any[]) {
+    for (const rawItem of items) {
       const module = this.matchModule(setting.project.modules, rawItem.moduleName);
       const ownerMember = this.matchProjectMember(setting.project.members, rawItem.ownerName);
       const assistantMember = this.matchProjectMember(setting.project.members, rawItem.assistantName);
@@ -852,15 +959,19 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
           moduleId: module?.id,
           title: rawItem.title,
           description: `${rawItem.description}\n\n来源：飞书群消息整理`,
-          priority: rawItem.priority || 'MEDIUM',
+          priority:
+            rawItem.priority === 'HIGH' ||
+            rawItem.priority === 'URGENT' ||
+            rawItem.priority === 'LOW'
+              ? rawItem.priority
+              : 'MEDIUM',
           status: 'PENDING_CONFIRMATION',
           ownerId: ownerMember?.userId,
           ownerMemberId: ownerMember?.id,
           assistantId: assistantMember?.userId,
           assistantMemberId: assistantMember?.id,
           dueTime: rawItem.dueTime ? new Date(rawItem.dueTime) : undefined,
-          createdById:
-            setting.manager?.id || setting.project.createdById || 'SYSTEM_SEED_USER_ID',
+          createdById: setting.manager?.id || setting.project.createdById,
           logs: {
             create: {
               action: 'CREATED',
@@ -913,10 +1024,14 @@ export class FeishuService implements OnModuleInit, OnModuleDestroy {
   }
 
   private resolveReviewerId(payload: FeishuEventPayload, project: { members: Array<{ user: { id: string; feishuUserId: string | null } }> }) {
+    const event =
+      payload.event && typeof payload.event === 'object'
+        ? (payload.event as FeishuEventBody)
+        : {};
     const senderOpenId =
-      payload?.event?.user?.open_id ||
-      payload?.event?.user_id ||
-      payload?.event?.operator?.open_id ||
+      event?.user?.open_id ||
+      event?.user_id ||
+      event?.operator?.open_id ||
       null;
 
     if (!senderOpenId) {

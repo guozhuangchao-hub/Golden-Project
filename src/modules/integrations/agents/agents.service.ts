@@ -4,13 +4,14 @@ import { execFile } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { promisify } from 'util';
+import { AppConfigService } from '../../../platform/config/app-config.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ChatAgentDto } from './dto/chat-agent.dto';
 import { ManagerWorkflowDto } from './dto/manager-workflow.dto';
 import { MemberWorkflowDto } from './dto/member-workflow.dto';
 import { UpsertAgentIntegrationDto } from './dto/upsert-agent-integration.dto';
 
-type AgentWebhookPayload = Record<string, any>;
+type AgentWebhookPayload = Record<string, unknown>;
 type AgentConfig = {
   mode?: 'openclaw-cli' | 'builtin';
   command?: string;
@@ -22,11 +23,75 @@ type AgentConfig = {
   customerPrompt?: string;
 };
 
+type WorkflowRiskItem = {
+  severity?: string;
+  title?: string;
+  ownerMember?: {
+    user?: {
+      name?: string | null;
+    } | null;
+  } | null;
+};
+
+type WorkflowTaskItem = {
+  title?: string;
+  status?: string;
+  priority?: string;
+  dueTime?: Date | null;
+  module?: {
+    name?: string | null;
+  } | null;
+  owner?: {
+    name?: string | null;
+  } | null;
+  needsHelp?: boolean;
+};
+
+type WorkflowReminderItem = {
+  title?: string;
+  content?: string;
+};
+
+type AgentPayloadText = {
+  text?: string;
+};
+
+type AgentRawOutput = {
+  reply?: string;
+  text?: string;
+  message?: string;
+  content?: string;
+  response?: string;
+  data?: {
+    reply?: string;
+    text?: string;
+  };
+  result?: {
+    reply?: string;
+    text?: string;
+    message?: string;
+    content?: string;
+    payloads?: AgentPayloadText[];
+  };
+};
+
+type AgentPayloadHeader = {
+  provider?: string;
+};
+
+type AgentManagerReport = {
+  summary?: string | null;
+  title?: string | null;
+};
+
 const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly appConfigService: AppConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   private async resolveProject(identifier: string) {
     return this.prisma.project.findFirst({
@@ -137,7 +202,11 @@ export class AgentsService {
       return { challenge: payload.challenge };
     }
 
-    const provider = String(payload?.provider || payload?.header?.provider || 'unknown');
+    const header =
+      payload.header && typeof payload.header === 'object'
+        ? (payload.header as AgentPayloadHeader)
+        : undefined;
+    const provider = String(payload.provider || header?.provider || 'unknown');
     const projectId = String(payload?.projectId || payload?.project_id || '');
     const eventType = String(payload?.eventType || payload?.event_type || 'unknown');
     const externalEventId = payload?.eventId || payload?.event_id || null;
@@ -526,8 +595,8 @@ export class AgentsService {
 
   private buildManagerWorkflowPrompt(
     project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
-    riskItems: Array<any>,
-    latestRiskReport: any,
+    riskItems: WorkflowRiskItem[],
+    latestRiskReport: AgentManagerReport | null,
     memberLoad: Array<{ userId: string; name: string; count: number }>,
     focus?: string,
   ) {
@@ -571,9 +640,9 @@ export class AgentsService {
   private buildMemberWorkflowPrompt(
     project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
     memberName: string,
-    tasks: Array<any>,
-    reminders: Array<any>,
-    risks: Array<any>,
+    tasks: WorkflowTaskItem[],
+    reminders: WorkflowReminderItem[],
+    risks: WorkflowRiskItem[],
     focus?: string,
   ) {
     const taskLines = tasks.map((task) => {
@@ -606,13 +675,15 @@ export class AgentsService {
 
   private buildBuiltinManagerBrief(
     project: Awaited<ReturnType<AgentsService['resolveProject']>> & {},
-    riskItems: Array<any>,
-    latestRiskReport: any,
+    riskItems: WorkflowRiskItem[],
+    latestRiskReport: AgentManagerReport | null,
     memberLoad: Array<{ userId: string; name: string; count: number }>,
     focus?: string,
   ) {
-    const overdueTasks = (project.tasks || []).filter((task) => task.dueTime && task.dueTime < new Date());
-    const helpTasks = (project.tasks || []).filter((task: any) => task.needsHelp);
+    const overdueTasks = (project.tasks || []).filter(
+      (task) => task.dueTime && task.dueTime < new Date(),
+    );
+    const helpTasks = (project.tasks || []).filter((task) => task.needsHelp);
     const pendingEvents = project.events || [];
     const topRisks = riskItems.slice(0, 3);
     const actions: string[] = [];
@@ -646,9 +717,9 @@ export class AgentsService {
   private buildBuiltinMemberBrief(
     projectName: string,
     memberName: string,
-    tasks: Array<any>,
-    reminders: Array<any>,
-    risks: Array<any>,
+    tasks: WorkflowTaskItem[],
+    reminders: WorkflowReminderItem[],
+    risks: WorkflowRiskItem[],
     focus?: string,
   ) {
     const urgentTasks = tasks.filter((task) => task.priority === 'HIGH' || task.priority === 'URGENT');
@@ -885,10 +956,10 @@ export class AgentsService {
     if (cwd.startsWith('/Users/')) {
       return cwd.split('/').slice(0, 3).join('/');
     }
-    return process.env.HOME || '';
+    return this.appConfigService.getHomeDir();
   }
 
-  private parseAgentOutput(stdout: string) {
+  private parseAgentOutput(stdout: string): AgentRawOutput {
     const trimmed = stdout.trim();
     if (!trimmed) {
       return {};
@@ -912,12 +983,12 @@ export class AgentsService {
     }
   }
 
-  private extractAgentText(raw: any, stdout: string) {
+  private extractAgentText(raw: AgentRawOutput, stdout: string) {
     // OpenClaw CLI --json output: result.payloads[].text
     if (raw?.result?.payloads && Array.isArray(raw.result.payloads)) {
       const texts = raw.result.payloads
-        .map((p: any) => p?.text)
-        .filter((t: any) => typeof t === 'string' && t.trim());
+        .map((payload) => payload?.text)
+        .filter((text): text is string => typeof text === 'string' && text.trim().length > 0);
       if (texts.length > 0) {
         return texts.join('\n').trim();
       }

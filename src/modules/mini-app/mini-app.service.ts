@@ -2,6 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { TaskUpdateType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  IdentityClaimsState,
+  StructureTreeNode,
+  StructureTreeState,
+} from '../projects/project-runtime-state.types';
 import { AgentsService } from '../integrations/agents/agents.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -358,21 +363,25 @@ export class MiniAppService {
     return project;
   }
 
-  private getStructureTree(structureTree: unknown): Array<any> {
-    if (structureTree && typeof structureTree === 'object' && Array.isArray((structureTree as any).tree)) {
-      return (structureTree as any).tree;
+  private getStructureTree(structureTree: unknown): StructureTreeNode[] {
+    if (
+      structureTree &&
+      typeof structureTree === 'object' &&
+      Array.isArray((structureTree as StructureTreeState).tree)
+    ) {
+      return (structureTree as StructureTreeState).tree;
     }
     return [];
   }
 
-  private getIdentityClaims(identityClaims: unknown): Record<string, any> {
+  private getIdentityClaims(identityClaims: unknown): IdentityClaimsState {
     if (identityClaims && typeof identityClaims === 'object' && !Array.isArray(identityClaims)) {
-      return { ...(identityClaims as Record<string, any>) };
+      return { ...(identityClaims as IdentityClaimsState) };
     }
     return {};
   }
 
-  private findParentName(tree: Array<any>, parentId: string | null) {
+  private findParentName(tree: StructureTreeNode[], parentId: string | null) {
     if (!parentId) return '';
     const parent = tree.find((node) => node.id === parentId);
     return parent?.name || '';

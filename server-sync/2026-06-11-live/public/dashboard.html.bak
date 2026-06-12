@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Project Dashboard</title>
+    <script>
+      (function () {
+        const assetBase = location.protocol === 'file:' ? './' : '/console/assets/';
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = `${assetBase}dashboard.css`;
+        document.head.appendChild(style);
+        window.__DASHBOARD_ASSET_BASE__ = assetBase;
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">
+              <span id="heroMode">DEMO MODE</span>
+            </div>
+            <h1 id="projectName">活动指挥台</h1>
+            <p id="projectMeta">
+              面向活动公司现场管理的项目指挥台，顶部看项目基本信息，下面直接看时间与进度驱动的流程图。
+            </p>
+          </div>
+          <aside class="hero-tools">
+            <h2>连接项目数据</h2>
+            <p>现在可以直接切换项目查看 dashboard。项目编码由系统固定生成，页面不支持手动输入。</p>
+            <form id="loadForm">
+              <div class="field">
+                <label for="projectSelect">项目切换</label>
+                <select id="projectSelect" name="projectSelect">
+                  <option value="">正在加载项目列表...</option>
+                </select>
+              </div>
+              <div class="toolbar project-toolbar">
+                <button class="button primary" type="submit">加载项目</button>
+                <button class="button secondary" id="useDemo" type="button">查看演示</button>
+                <button class="button tertiary" id="createProject" type="button">+ 新增项目</button>
+                <button class="button danger" id="deleteProject" type="button">删除项目</button>
+                <button class="button primary" id="openIntakeWorkbook" type="button">信息录入</button>
+              </div>
+            </form>
+            <div class="quick-projects" id="quickProjects"></div>
+            <p class="project-form-note">
+              新增项目后，系统会自动在「项目列表」里创建对应文件夹，并放入前期录入 Excel 模板，Excel 文件名按“项目名称-创建日期”命名。
+            </p>
+            <p class="subtle" id="loadStatus">正在准备页面...</p>
+          </aside>
+        </div>
+
+        <div class="hero-metrics" id="heroMetrics"></div>
+      </section>
+
+      <section class="overview-band">
+        <article class="panel compact-panel">
+          <div class="panel-header">
+            <div>
+              <h3>事件状态总览</h3>
+              <p>从统一 Event 队列看待确认、已确认、执行、完成和驳回状态。</p>
+            </div>
+            <button class="badge badge-button" type="button" data-overview-dialog="events">Event View</button>
+          </div>
+          <div class="status-grid" id="taskStatus"></div>
+        </article>
+
+        <article class="panel dark compact-panel">
+          <div class="panel-header">
+            <div>
+              <h3>人员编成</h3>
+              <p>快速查看管理层、组长、执行人员和临时人员配置。</p>
+            </div>
+            <button class="badge badge-button" type="button" data-overview-dialog="people">People Ops</button>
+          </div>
+          <div class="status-grid" id="members"></div>
+        </article>
+
+        <article class="panel structure-entry-panel">
+          <div class="panel-header">
+            <div>
+              <h3>项目结构</h3>
+              <p>进入独立结构页查看模块、负责人、成员和任务树，并拖动调整模块顺序。</p>
+            </div>
+            <span class="badge">Structure</span>
+          </div>
+          <button class="button primary" id="openProjectStructure" type="button">打开项目结构</button>
+        </article>
+
+        <article class="panel file-entry-panel">
+          <div class="panel-header">
+            <div>
+              <h3>项目文件</h3>
+              <p>集中查看项目文件夹中的方案、表格、文档、图片和其他活动资料。</p>
+            </div>
+            <span class="badge">Files</span>
+          </div>
+          <button class="button primary" id="openProjectFiles" type="button">打开项目文件</button>
+        </article>
+      </section>
+
+      <section class="command-grid">
+          <article class="panel event-list-panel">
+            <div class="panel-header">
+              <div>
+                <h3>事件列表</h3>
+                <p>所有来源的事件都会进入统一 Event 列表，待确认事项在上方，已确认和已发布事项自动向下排列。</p>
+              </div>
+            </div>
+            <div class="event-pipeline" id="eventPipeline"></div>
+            <div class="feishu-list" id="pendingEvents"></div>
+          </article>
+
+          <article class="panel task-publish-panel">
+            <div class="panel-header">
+              <div>
+                <h3>任务发布</h3>
+                <p>输入自然语言任务，AI 转译后发布到后台，并写入微信小程序通知队列。</p>
+              </div>
+              <span class="badge">Task Push</span>
+            </div>
+            <div class="task-publish-box">
+              <div class="publish-mode-tabs" id="publishModeTabs">
+                <button class="publish-mode active" type="button" data-publish-mode="single">单人</button>
+                <button class="publish-mode" type="button" data-publish-mode="multi">多人</button>
+                <button class="publish-mode" type="button" data-publish-mode="all">全体</button>
+              </div>
+              <div class="publish-recipient-summary" id="publishRecipientSummary">将发送给：未选择</div>
+              <div class="publish-recipient-list" id="publishRecipientList"></div>
+              <label class="publish-label" for="publishTaskText">任务描述</label>
+              <textarea
+                id="publishTaskText"
+                class="publish-textarea"
+                maxlength="500"
+                placeholder="例如：请王晴今天 18:00 前确认签到胸卡缺口，如果少于 80 个就安排补打。"
+              ></textarea>
+              <p class="publish-hint">AI 会结合发布对象，提取任务标题、模块、负责人、优先级和截止时间。</p>
+              <div class="publish-preview" id="publishPreview"></div>
+              <div class="publish-actions">
+                <button class="button secondary" id="translateTaskPublish" type="button">AI 转译</button>
+                <button class="button primary" id="confirmTaskPublish" type="button" disabled>确认发布</button>
+              </div>
+              <p class="subtle" id="taskPublishStatus">选择对象并输入任务描述后即可发布。</p>
+            </div>
+          </article>
+      </section>
+
+      <section class="intelligence-row">
+        <article class="panel dark risk-panel">
+          <div class="panel-header">
+            <div>
+              <h3>AI 风险信号</h3>
+              <p>后续这里会优先接扣子生成的风险提示和行动建议，而不是普通摘要。</p>
+            </div>
+            <span class="badge">AI Signal</span>
+          </div>
+          <div class="signal-list" id="signals"></div>
+        </article>
+      </section>
+
+      <section class="panel roadmap-panel">
+        <div class="panel-header">
+          <div>
+            <h3>时间与进度流程图</h3>
+            <p>先看最近要处理的节点，再按日期展开完整流程。每个节点都带负责人、协助人、模块和进度，方便项目经理快速追进。</p>
+          </div>
+          <span class="badge">Timeline Flow</span>
+        </div>
+        <div class="focus-strip" id="focusStrip"></div>
+        <div class="flow-summary" id="flowSummary"></div>
+        <div class="roadmap" id="roadmap"></div>
+      </section>
+
+      <div class="footer-note">
+        Golden Project MVP dashboard prototype. Route: <code>/console/dashboard</code>
+      </div>
+    </main>
+
+    <div class="modal-backdrop" id="eventReviewModal" aria-hidden="true">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="eventReviewTitle">
+        <div class="modal-header">
+          <div>
+            <div class="eyebrow compact-eyebrow">Event Review</div>
+            <h3 id="eventReviewTitle">确认事件入库</h3>
+            <p>AI 只负责识别和建议，项目经理确认后才生成正式任务。</p>
+          </div>
+          <button class="modal-close" id="closeEventReview" type="button" aria-label="关闭">×</button>
+        </div>
+        <form class="modal-form" id="eventReviewForm">
+          <input id="reviewEventId" type="hidden" />
+          <div class="field">
+            <label for="reviewTaskTitle">任务标题</label>
+            <input id="reviewTaskTitle" name="title" required maxlength="200" />
+          </div>
+          <div class="modal-grid">
+            <div class="field">
+              <label for="reviewModuleName">模块</label>
+              <input id="reviewModuleName" name="moduleName" placeholder="例如：舞台执行" />
+            </div>
+            <div class="field">
+              <label for="reviewPriority">优先级</label>
+              <select id="reviewPriority" name="priority">
+                <option value="MEDIUM">普通</option>
+                <option value="HIGH">高优先级</option>
+                <option value="URGENT">紧急</option>
+                <option value="LOW">低优先级</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-grid">
+            <div class="field">
+              <label for="reviewOwnerName">负责人</label>
+              <input id="reviewOwnerName" name="ownerName" placeholder="待指定负责人" />
+            </div>
+            <div class="field">
+              <label for="reviewAssistantName">协助人</label>
+              <input id="reviewAssistantName" name="assistantName" placeholder="可为空" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="reviewDueTime">截止时间</label>
+            <input id="reviewDueTime" name="dueTime" type="datetime-local" />
+          </div>
+          <div class="field">
+            <label for="reviewDescription">任务说明</label>
+            <textarea id="reviewDescription" name="description" rows="3"></textarea>
+          </div>
+          <div class="modal-source" id="reviewRawContent"></div>
+          <div class="modal-actions">
+            <button class="button secondary" id="cancelEventReview" type="button">取消</button>
+            <button class="button primary" type="submit">确认生成任务</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="overviewDetailModal" aria-hidden="true">
+      <section class="modal-card overview-detail-card" role="dialog" aria-modal="true" aria-labelledby="overviewDetailTitle">
+        <div class="modal-header">
+          <div>
+            <div class="eyebrow compact-eyebrow" id="overviewDetailEyebrow">Overview</div>
+            <h3 id="overviewDetailTitle">详情列表</h3>
+            <p id="overviewDetailSubtitle">查看当前项目的详细数据。</p>
+          </div>
+          <button class="modal-close" id="closeOverviewDetail" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="overview-detail-list" id="overviewDetailList"></div>
+      </section>
+    </div>
+
+    <aside class="customer-service-widget" id="customerServiceWidget" aria-label="项目客服">
+      <button class="customer-service-launcher" id="customerServiceLauncher" type="button" aria-expanded="false">
+        <span>项目客服</span>
+      </button>
+      <section class="customer-service-dialog" id="customerServiceDialog" aria-hidden="true">
+        <div class="customer-service-header">
+          <div>
+            <h3>项目客服</h3>
+            <p>当前项目上下文内回答任务、风险和下一步动作。</p>
+          </div>
+          <button class="customer-service-close" id="customerServiceClose" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="customer-service-window" id="customerServiceWindow">
+          <div class="customer-message assistant">
+            <span>客服</span>
+            <p>我在这个项目里待命。你可以问我今天先做什么、有哪些风险、哪些群消息需要确认。</p>
+          </div>
+        </div>
+        <form class="customer-service-input-row" id="customerServiceForm">
+          <input id="customerServiceInput" maxlength="240" placeholder="问项目客服..." />
+          <button class="button primary" type="submit">发送</button>
+        </form>
+      </section>
+    </aside>
+
+    <script>
+      (function () {
+        const assetBase = window.__DASHBOARD_ASSET_BASE__ || (location.protocol === 'file:' ? './' : '/console/assets/');
+        const script = document.createElement('script');
+        script.src = `${assetBase}dashboard.js`;
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

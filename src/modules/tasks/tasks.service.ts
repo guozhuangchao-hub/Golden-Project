@@ -11,8 +11,8 @@ import {
   TaskUpdateType,
   VisibilityScope,
 } from '@prisma/client';
+import { AppConfigService } from '../../platform/config/app-config.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { CreateTaskUpdateDto } from './dto/create-task-update.dto';
 import {
@@ -20,34 +20,31 @@ import {
   PublishTaskDto,
   TranslateTaskDto,
 } from './dto/publish-task.dto';
+import { TasksRepository } from './tasks.repository';
 import { TranslateByImageDto } from './dto/translate-by-image.dto';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
+
+type TranslatedImageTask = {
+  title?: string;
+  description?: string;
+  moduleName?: string;
+  ownerName?: string;
+  priority?: 'MEDIUM' | 'HIGH' | 'URGENT' | 'LOW';
+  dueTime?: string;
+};
 
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly appConfigService: AppConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly tasksRepository: TasksRepository,
   ) {}
 
   private async resolveProject(identifier: string) {
-    const project = await this.prisma.project.findFirst({
-      where: {
-        OR: [{ id: identifier }, { code: identifier }],
-      },
-      include: {
-        modules: {
-          orderBy: { sortOrder: 'asc' },
-        },
-        members: {
-          where: { status: 'ACTIVE' },
-          include: { user: true },
-          orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
-        },
-      },
-    });
+    const project = await this.tasksRepository.findProjectWithMembersAndModules(identifier);
 
     if (!project) {
       throw new NotFoundException('Project not found');
@@ -57,15 +54,7 @@ export class TasksService {
   }
 
   private async ensureSystemUser() {
-    return this.prisma.user.upsert({
-      where: { email: 'system-task-publisher@golden.local' },
-      update: {},
-      create: {
-        name: '任务发布系统',
-        email: 'system-task-publisher@golden.local',
-        remark: '用于后台 AI 任务发布与小程序通知',
-      },
-    });
+    return this.tasksRepository.upsertSystemUser();
   }
 
   private async resolveRecipients(
@@ -197,41 +186,7 @@ export class TasksService {
     rawText?: string | null;
     recipientMode?: string | null;
   }) {
-    return this.prisma.event.create({
-      data: {
-        projectId: params.projectId,
-        eventType: 'task_publish',
-        title: params.title,
-        description: params.description || params.rawText || '后台发布任务已生成正式任务。',
-        status: EventStatus.confirmed,
-        confidence: 1,
-        sourceType: EventSourceType.manual,
-        sourceChannel: params.sourceChannel,
-        sourceSender: '任务发布',
-        sourceSenderRole: 'admin',
-        rawContent: params.rawText || params.description || params.title,
-        visibilityScope: VisibilityScope.admin,
-        aiResult: {
-          source: params.sourceChannel,
-          taskId: params.taskId,
-          recipientMode: params.recipientMode,
-        },
-        proposedChanges: {
-          task: {
-            id: params.taskId,
-            title: params.title,
-            description: params.description,
-            moduleName: params.moduleName,
-            ownerName: params.ownerName,
-            priority: params.priority,
-            dueTime: params.dueTime ? new Date(params.dueTime).toISOString() : undefined,
-          },
-        },
-        createdById: params.systemUserId,
-        confirmedById: params.systemUserId,
-        confirmedAt: new Date(),
-      },
-    });
+    return this.tasksRepository.createTaskEvent(params);
   }
 
   async translatePublish(projectIdentifier: string, dto: TranslateTaskDto) {
@@ -274,7 +229,7 @@ export class TasksService {
 
   async translateByImage(projectIdentifier: string, dto: TranslateByImageDto) {
     const { project, recipients } = await this.resolveRecipients(projectIdentifier, dto);
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = this.appConfigService.getGeminiApiKey();
     if (!apiKey) {
       throw new BadRequestException('GEMINI_API_KEY not configured');
     }
@@ -345,7 +300,9 @@ ${projectContext}
         throw new BadRequestException('图片识别服务暂时不可用');
       }
 
-      const data = await response.json() as any;
+      const data = (await response.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
       geminiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       if (!geminiText) {
         throw new BadRequestException('Gemini 未能返回识别结果');
@@ -362,20 +319,25 @@ ${projectContext}
       .replace(/\s*```$/i, '')
       .trim();
 
-    let parsed: Record<string, any>;
+    let parsed: TranslatedImageTask;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(cleaned) as TranslatedImageTask;
     } catch {
       this.logger.error('Failed to parse Gemini response as JSON: ' + geminiText);
       throw new BadRequestException('图片识别结果格式异常');
     }
 
     const ownerMember = recipients[0] || null;
-    const matchedModule = parsed.moduleName
-      ? (project.modules || []).find((m) => m.name.includes(parsed.moduleName) || parsed.moduleName.includes(m.name))
+    const parsedModuleName = parsed.moduleName?.trim();
+    const matchedModule = parsedModuleName
+      ? (project.modules || []).find(
+          (m) => m.name.includes(parsedModuleName) || parsedModuleName.includes(m.name),
+        )
       : null;
 
-    const priority = ['HIGH', 'URGENT'].includes(parsed.priority) ? parsed.priority : 'MEDIUM';
+    const parsedPriority = parsed.priority;
+    const priority =
+      parsedPriority === 'HIGH' || parsedPriority === 'URGENT' ? parsedPriority : 'MEDIUM';
     const fallbackDue = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const dueTime = parsed.dueTime
       ? (() => {
@@ -412,11 +374,7 @@ ${projectContext}
 
   async publish(projectIdentifier: string, dto: PublishTaskDto) {
     const preview = await this.translatePublish(projectIdentifier, dto);
-    const project = await this.prisma.project.findFirst({
-      where: {
-        OR: [{ id: projectIdentifier }, { code: projectIdentifier }],
-      },
-    });
+    const project = await this.tasksRepository.findProjectByIdentifier(projectIdentifier);
     if (!project) {
       throw new NotFoundException('Project not found');
     }
@@ -424,15 +382,13 @@ ${projectContext}
     const systemUser = await this.ensureSystemUser();
     const ownerMemberId = preview.ownerMemberId;
     const ownerMember = ownerMemberId
-      ? await this.prisma.projectMember.findUnique({ where: { id: ownerMemberId } })
+      ? await this.tasksRepository.findProjectMemberById(ownerMemberId)
       : null;
     const editedModule = !dto.moduleId && dto.moduleName
-      ? await this.prisma.projectModule.findFirst({
-          where: { projectId: project.id, name: dto.moduleName },
-        })
+      ? await this.tasksRepository.findProjectModuleByName(project.id, dto.moduleName)
       : null;
 
-    const task = await this.prisma.task.create({
+    const task = await this.tasksRepository.createTask({
       data: {
         projectId: project.id,
         moduleId: dto.moduleId || editedModule?.id || preview.moduleId,
@@ -456,18 +412,10 @@ ${projectContext}
           },
         },
       },
-      include: {
-        owner: true,
-        module: true,
-        logs: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
     });
 
-    const notifications = await this.prisma.notification.createMany({
-      data: preview.recipients.map((recipient) => ({
+    const notifications = await this.tasksRepository.createNotifications(
+      preview.recipients.map((recipient) => ({
         projectId: project.id,
         taskId: task.id,
         receiverId: recipient.userId,
@@ -485,7 +433,7 @@ ${projectContext}
           recipientMode: dto.recipientMode,
         },
       })),
-    });
+    );
 
     await this.recordTaskEvent({
       projectId: project.id,
@@ -513,20 +461,14 @@ ${projectContext}
     const project = await this.resolveProject(projectId);
     const systemUser = await this.ensureSystemUser();
     const ownerMember = dto.ownerMemberId
-      ? await this.prisma.projectMember.findUnique({
-          where: { id: dto.ownerMemberId, projectId: project.id },
-          include: { user: true },
-        })
+      ? await this.tasksRepository.findProjectMemberById(dto.ownerMemberId)
       : null;
 
     const assistantMember = dto.assistantMemberId
-      ? await this.prisma.projectMember.findUnique({
-          where: { id: dto.assistantMemberId, projectId: project.id },
-          include: { user: true },
-        })
+      ? await this.tasksRepository.findProjectMemberById(dto.assistantMemberId)
       : null;
 
-    const task = await this.prisma.task.create({
+    const task = await this.tasksRepository.createTask({
       data: {
         projectId: project.id,
         moduleId: dto.moduleId,
@@ -547,11 +489,6 @@ ${projectContext}
             content: 'Task created',
           },
         },
-      },
-      include: {
-        owner: true,
-        module: true,
-        logs: true,
       },
     });
 
@@ -574,47 +511,15 @@ ${projectContext}
 
   async findAll(projectId: string) {
     const project = await this.resolveProject(projectId);
-    return this.prisma.task.findMany({
-      where: { projectId: project.id },
-      include: {
-        owner: true,
-        assistant: true,
-        module: true,
-      },
-      orderBy: [{ dueTime: 'asc' }, { createdAt: 'desc' }],
-    });
+    return this.tasksRepository.findTasks(project.id);
   }
 
   findOne(taskId: string) {
-    return this.prisma.task.findUnique({
-      where: { id: taskId },
-      include: {
-        owner: true,
-        assistant: true,
-        module: true,
-        updates: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-        logs: {
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
+    return this.tasksRepository.findTaskDetail(taskId);
   }
 
   listUpdates(taskId: string) {
-    return this.prisma.taskUpdate.findMany({
-      where: { taskId },
-      include: {
-        member: {
-          include: {
-            user: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.tasksRepository.findTaskUpdates(taskId);
   }
 
   async changeStatus(
@@ -622,76 +527,31 @@ ${projectContext}
     dto: UpdateTaskStatusDto,
     toStatus: TaskStatus,
   ) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-    });
+    const task = await this.tasksRepository.findTaskDetail(taskId);
 
     if (!task) {
       return null;
     }
 
-    const completedAt = toStatus === TaskStatus.COMPLETED ? new Date() : undefined;
-    const confirmedAt = toStatus === TaskStatus.CONFIRMED ? new Date() : undefined;
-    const cancelledAt = toStatus === TaskStatus.CANCELLED ? new Date() : undefined;
-
-    return this.prisma.task.update({
-      where: { id: taskId },
-      data: {
-        status: toStatus,
-        completedAt,
-        confirmedAt,
-        cancelledAt,
-        logs: {
-          create: {
-            action:
-              toStatus === TaskStatus.CONFIRMED
-                ? TaskLogAction.CONFIRMED
-                : toStatus === TaskStatus.COMPLETED
-                  ? TaskLogAction.COMPLETED
-                  : toStatus === TaskStatus.CANCELLED
-                    ? TaskLogAction.CANCELLED
-                    : TaskLogAction.STATUS_CHANGED,
-            fromStatus: task.status,
-            toStatus,
-            content: dto.content,
-          },
-        },
-      },
-      include: {
-        logs: {
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-      },
+    return this.tasksRepository.updateTaskStatus(taskId, {
+      currentStatus: task.status,
+      toStatus,
+      content: dto.content,
     });
   }
 
   async addUpdate(taskId: string, dto: CreateTaskUpdateDto) {
-    const task = await this.prisma.task.findUnique({
-      where: { id: taskId },
-      include: {
-        project: true,
-        owner: true,
-        ownerMember: {
-          include: {
-            user: true,
-          },
-        },
-      },
-    });
+    const task = await this.tasksRepository.findTaskDetail(taskId);
 
     if (!task) {
       throw new NotFoundException('Task not found');
     }
 
     const member = dto.memberId
-      ? await this.prisma.projectMember.findUnique({
-          where: { id: dto.memberId },
-          include: { user: true },
-        })
+      ? await this.tasksRepository.findProjectMemberById(dto.memberId)
       : null;
 
-    const update = await this.prisma.taskUpdate.create({
+    const update = await this.tasksRepository.createTaskUpdate({
       data: {
         taskId,
         memberId: member?.id,
@@ -699,44 +559,14 @@ ${projectContext}
         content: dto.content,
         progressPercent: dto.progressPercent,
       },
-      include: {
-        member: {
-          include: {
-            user: true,
-          },
-        },
-      },
     });
 
-    await this.prisma.task.update({
-      where: { id: taskId },
-      data: {
-        lastProgressAt:
-          dto.type === TaskUpdateType.PROGRESS ? new Date() : undefined,
-        blockedAt:
-          dto.type === TaskUpdateType.BLOCKER || dto.type === TaskUpdateType.HELP_REQUEST
-            ? new Date()
-            : dto.type === TaskUpdateType.PROGRESS
-              ? null
-              : undefined,
-        needsHelp:
-          dto.type === TaskUpdateType.BLOCKER || dto.type === TaskUpdateType.HELP_REQUEST
-            ? true
-            : dto.type === TaskUpdateType.PROGRESS
-              ? false
-              : undefined,
-        logs: {
-          create: {
-            action: TaskLogAction.COMMENTED,
-            operatorId: member?.userId,
-            content: dto.content,
-            extraData: {
-              updateType: dto.type,
-              progressPercent: dto.progressPercent,
-            },
-          },
-        },
-      },
+    await this.tasksRepository.updateTaskAfterProgress({
+      taskId,
+      memberUserId: member?.userId,
+      type: dto.type,
+      content: dto.content,
+      progressPercent: dto.progressPercent,
     });
 
     if ((dto.type === TaskUpdateType.BLOCKER || dto.type === TaskUpdateType.HELP_REQUEST) && task.ownerId) {

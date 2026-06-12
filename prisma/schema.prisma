@@ -209,6 +209,7 @@ model User {
   managedFeishuProjects   FeishuProjectSetting[] @relation("FeishuProjectManager")
   createdEvents           Event[]                @relation("EventCreator")
   confirmedEvents         Event[]                @relation("EventConfirmer")
+  auditLogs               AuditLog[]             @relation("AuditActorUser")
 
   @@map("users")
 }
@@ -243,6 +244,7 @@ model Project {
   messageSignals      MessageSignal[]
   riskItems           RiskItem[]
   runtimeState        ProjectRuntimeState?
+  auditLogs           AuditLog[]
 
   @@index([status])
   @@index([startDate, endDate])
@@ -302,6 +304,7 @@ model ProjectMember {
   managedModules ProjectModule[] @relation("ModuleLeader")
   taskUpdates    TaskUpdate[]
   ownedRisks     RiskItem[]
+  auditLogs      AuditLog[]     @relation("AuditActorProjectMember")
 
   @@unique([projectId, userId])
   @@index([projectId, role, status])
@@ -385,6 +388,30 @@ model TaskUpdate {
   @@index([taskId, createdAt])
   @@index([memberId, createdAt])
   @@map("task_updates")
+}
+
+model AuditLog {
+  id                   String         @id @default(cuid())
+  projectId            String?        @map("project_id")
+  actorUserId          String?        @map("actor_user_id")
+  actorProjectMemberId String?        @map("actor_project_member_id")
+  actorSystemRole      String?        @map("actor_system_role") @db.VarChar(40)
+  action               String         @db.VarChar(80)
+  resourceType         String         @map("resource_type") @db.VarChar(80)
+  resourceId           String?        @map("resource_id") @db.VarChar(160)
+  status               String         @db.VarChar(30)
+  summary              String?        @db.VarChar(255)
+  details              Json?
+  createdAt            DateTime       @default(now()) @map("created_at")
+  project              Project?       @relation(fields: [projectId], references: [id])
+  actorUser            User?          @relation("AuditActorUser", fields: [actorUserId], references: [id])
+  actorProjectMember   ProjectMember? @relation("AuditActorProjectMember", fields: [actorProjectMemberId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
 }
 
 model Notification {
